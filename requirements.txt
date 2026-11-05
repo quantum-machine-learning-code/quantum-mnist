@@ -1,0 +1,14 @@
+# Core stack: PennyLane (differentiable quantum circuits) + PyTorch (hybrid models)
+pennylane>=0.40,<0.50
+torch>=2.4
+scikit-learn>=1.4
+numpy>=1.26
+matplotlib>=3.8
+tqdm>=4.66
+
+# Real MNIST auto-download for experiment 1.
+# torchvision is tightly coupled to the torch version; pip resolves a matching pair.
+# Verified on Python 3.13: torch 2.15.0 + torchvision 0.29.2.
+# If it cannot be installed, data.py falls back to sklearn.fetch_openml, then to
+# synthetic data (synthetic is only for offline smoke tests, flagged in meta.note).
+torchvision>=0.29
