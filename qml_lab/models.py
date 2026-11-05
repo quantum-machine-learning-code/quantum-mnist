@@ -1,5 +1,4 @@
-# -*- coding: utf-8 -*-
-"""VQC / MLP 分类器，以及量子增强的玩具级自回归字符语言模型。"""
+"""VQC 量子分类器与经典 MLP 基线。"""
 from __future__ import annotations
 
 import torch
@@ -7,9 +6,8 @@ from torch import nn
 
 try:
     from .quantum import make_vqc_layer
-except ImportError:  # 兼容把 qml_lab/ 直接加入 sys.path 后 import models 的方式
+except ImportError:
     from quantum import make_vqc_layer
-
 
 class VQCClassifier(nn.Module):
     """量子线路提取 n_qubits 维特征，再接线性分类头。"""
@@ -52,18 +50,3 @@ class MLPClassifier(nn.Module):
         return self.net(x.to(torch.float32))
 
 
-class TinyLM(nn.Module):
-    """字符级自回归模型：embedding -> 可微变换层(量子/经典) -> 词表分类头。"""
-
-    def __init__(self, vocab_size: int, n_qubits: int, transform: nn.Module):
-        super().__init__()
-        self.embed = nn.Embedding(vocab_size, n_qubits)
-        self.transform = transform
-        self.head = nn.Linear(n_qubits, vocab_size)
-
-    def forward(self, idx: torch.Tensor) -> torch.Tensor:
-        h = self.embed(idx)  # (B, T, Q) float32
-        B, T, Q = h.shape
-        z = self.transform(h.reshape(B * T, Q))  # 展平后逐位置过变换层
-        z = z.to(torch.float32)  # 量子 transform 可能返回 float64；cast 可微，保留梯度
-        return self.head(z.reshape(B, T, Q))  # (B, T, V) logits

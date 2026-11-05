@@ -161,26 +161,26 @@ def main() -> None:
         "histories": histories,
         "summary": summary,
     }
-    save_json(_to_builtin(payload), str(out_dir / "exp1_metrics.json"))
+    save_json(_to_builtin(payload), str(out_dir / "mnist_metrics.json"))
 
     # 图表统一输出到 --out
     plot_curves(
         histories=histories,
         metric="test_acc",
         ylabel="Test Accuracy",
-        path=str(out_dir / "exp1_accuracy.png"),
+        path=str(out_dir / "mnist_accuracy.png"),
         title="Exp1: VQC vs MLP test accuracy",
     )
     plot_bars(
         values=params_values,
         ylabel="Parameter Count",
-        path=str(out_dir / "exp1_params.png"),
+        path=str(out_dir / "mnist_params.png"),
         title="Exp1: parameter count",
     )
     plot_bars(
         values=time_values,
         ylabel="Train Time (s)",
-        path=str(out_dir / "exp1_time.png"),
+        path=str(out_dir / "mnist_time.png"),
         title="Exp1: training time",
     )
 
@@ -191,5 +191,5 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as exc:  # 实验脚本：给出清晰中文提示后保留堆栈
-        print(f"[01_quantum_mnist] 实验失败：{type(exc).__name__}: {exc}", file=sys.stderr)
+        print(f"[train_mnist] 实验失败：{type(exc).__name__}: {exc}", file=sys.stderr)
         raise
