@@ -23,8 +23,8 @@ data/
 # macOS metadata
 .DS_Store
 
-# Generated figures (mnist_*.png) live under results/, so those
-# images are ignored by default through the results/ rule above.
+# Generated figures (mnist_*.png, amplitude_*.png, capacity_scan.png) live
+# under results/, so those images are ignored through the results/ rule above.
 # Ignore loose PNGs elsewhere too, but keep committed docs/assets images:
 *.png
 !docs/**/*.png

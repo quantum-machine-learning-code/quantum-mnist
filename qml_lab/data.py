@@ -10,7 +10,7 @@ from pathlib import Path
 
 import numpy as np
 
-__all__ = ["load_mnist"]
+__all__ = ["load_mnist", "load_mnist_raw"]
 
 # 数据源别名，方便其它模块用不同名字指定
 _SOURCE_ALIASES = {
@@ -230,6 +230,75 @@ def load_mnist(n_train=2000, n_test=500, n_features=4, classes=10,
         "n_test": int(Xte.shape[0]),
         "seed": int(seed),
         "pca": used != "synthetic",
+        "fallback_reasons": reasons,
+    }
+    return Xtr, ytr, Xte, yte, meta
+
+
+def load_mnist_raw(n_train=600, n_test=200, classes=10,
+                   source="idx", data_dir="data", seed=0) -> tuple:
+    """加载**未经 PCA 压缩**的原始 784 维 MNIST，供振幅编码使用。
+
+    逐样本 L2 归一化，让每个样本可直接作为 2^n 维态的振幅。
+    n_qubits 需满足 2**n >= 784（n=10 时 1024，不足部分由电路补零）。
+    与 load_mnist 的区别：这里没有 PCA，也没有 [-pi, pi] 缩放。
+    """
+    if isinstance(classes, (int, np.integer)):
+        class_ids = list(range(int(classes)))
+    else:
+        class_ids = [int(c) for c in classes]
+    if len(class_ids) == 0:
+        class_ids = [0]
+    C = len(class_ids)
+    counts_tr = _split_counts(n_train, C)
+    counts_te = _split_counts(n_test, C)
+
+    src = _normalize_source(source)
+    # 显式指定 idx 时不再回退到在线下载，避免网络挂起；auto 才走完整回退链
+    chain = ["idx", "torchvision", "openml"] if src == "auto" else (
+        ["idx"] if src == "idx" else ([] if src == "synthetic" else [src]))
+
+    Xtr = ytr = Xte = yte = None
+    used = "synthetic"
+    reasons: list[str] = []
+    for candidate in chain:
+        try:
+            Xr, yr, Xe, ye = _fetch_raw(candidate, data_dir)
+            rng = np.random.default_rng(seed)
+            Xtr, ytr = _select(Xr, yr, counts_tr, class_ids, rng)
+            Xte, yte = _select(Xe, ye, counts_te, class_ids, rng)
+            used = candidate
+            break
+        except Exception as e:
+            reasons.append(f"{candidate}: {type(e).__name__}: {e}")
+
+    if used == "synthetic":
+        # 离线兜底：784 维可分高斯数据，只用于流程自检
+        Xtr, ytr, Xte, yte = _make_synthetic(counts_tr, counts_te, 784, C, seed)
+
+    def _l2(X) -> np.ndarray:
+        A = np.asarray(X, dtype=np.float32)
+        norms = np.linalg.norm(A, axis=1, keepdims=True)
+        norms[norms < 1e-12] = 1.0
+        return np.ascontiguousarray(A / norms, dtype=np.float32)
+
+    Xtr, Xte = _l2(Xtr), _l2(Xte)
+    ytr = np.ascontiguousarray(ytr, dtype=np.int64)
+    yte = np.ascontiguousarray(yte, dtype=np.int64)
+
+    note = ("SYNTHETIC - not real MNIST，仅用于离线冒烟测试" if used == "synthetic"
+            else f"real MNIST via {used}; NO PCA; full 784-d; per-sample L2 normalized for amplitude encoding")
+    meta = {
+        "source": used,
+        "n_classes": C,
+        "n_features": 784,
+        "class_ids": list(class_ids),
+        "encoding": "amplitude",
+        "pca": False,
+        "note": note,
+        "n_train": int(Xtr.shape[0]),
+        "n_test": int(Xte.shape[0]),
+        "seed": int(seed),
         "fallback_reasons": reasons,
     }
     return Xtr, ytr, Xte, yte, meta

@@ -65,3 +65,51 @@ def make_vqc_layer(
 
     layer = layer.to(torch.float32)  # 统一权重精度，避免与 float32 输入混用
     return _Float32VQC(layer)
+
+
+def make_amplitude_layer(
+    n_qubits: int = 10,
+    n_layers: int = 2,
+    diff_method: str = "backprop",
+    shots: int | None = None,
+    n_features: int = 784,
+) -> nn.Module:
+    """振幅编码层：输入 (B, n_features) 的 L2 归一化向量，输出 (B, n_qubits)。
+
+    2**n_qubits >= n_features 才能装下完整特征；不足的振幅用 0 补齐。
+    与 AngleEmbedding 的关键区别：**不需要把 784 维压到 4 维**，
+    n 个 qubits 的态空间天然容纳 2^n 个振幅。
+
+    重要边界：在状态向量模拟器里，制备这个初态是「免费」的（直接写入态向量）；
+    真实量子硬件上需要 O(2^n) 深度的状态制备电路或尚不存在的 QRAM，
+    因此这个实验的耗时不代表真机成本。
+    """
+    if 2 ** n_qubits < n_features:
+        raise ValueError(
+            f"2**{n_qubits}={2 ** n_qubits} < n_features={n_features}；"
+            f"至少需要 n_qubits={int(n_features - 1).bit_length()} 才能装下"
+        )
+
+    analytic = shots is None or shots == 0
+    if not analytic and diff_method == "backprop":
+        diff_method = "parameter-shift"
+        print("[quantum] 有限 shots 不支持 backprop，diff_method 已自动切换为 parameter-shift")
+
+    dev = (qml.device("default.qubit", wires=n_qubits) if analytic
+           else qml.device("default.qubit", wires=n_qubits, shots=shots))
+
+    def circuit(inputs, weights):
+        qml.AmplitudeEmbedding(inputs, wires=range(n_qubits), normalize=True, pad_with=0.0)
+        qml.StronglyEntanglingLayers(weights, wires=range(n_qubits))
+        return [qml.expval(qml.PauliZ(i)) for i in range(n_qubits)]
+
+    weight_shapes = {"weights": (n_layers, n_qubits, 3)}
+    try:
+        qnode = qml.qnode(dev, diff_method=diff_method)(circuit)
+        layer = qml.qnn.TorchLayer(qnode, weight_shapes)
+    except Exception:
+        qnode = qml.qnode(dev, interface="torch", diff_method=diff_method)(circuit)
+        layer = qml.qnn.TorchLayer(qnode, weight_shapes)
+
+    layer = layer.to(torch.float32)
+    return _Float32VQC(layer)
