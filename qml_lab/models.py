@@ -7,9 +7,11 @@ import torch
 from torch import nn
 
 try:
-    from .quantum import make_amplitude_layer, make_vqc_layer
+    from .quantum import (make_amplitude_layer, make_rich_layer,
+                          make_vqc_layer, n_readout)
 except ImportError:
-    from quantum import make_amplitude_layer, make_vqc_layer
+    from quantum import (make_amplitude_layer, make_rich_layer,
+                         make_vqc_layer, n_readout)
 
 
 def _build_head(n_in: int, n_classes: int, head: str, hidden: int) -> nn.Module:
@@ -98,6 +100,44 @@ class AmplitudeVQCClassifier(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = x.to(torch.float32)
         z = self.q(x).to(torch.float32)
+        return self.head(z * self.out_scale)
+
+
+class RichVQCClassifier(nn.Module):
+    """可配置读出 / 数据重上传的 VQC。
+
+    与 :class:`AmplitudeVQCClassifier` 的差别只在量子层：``observables`` 决定
+    读出维度，``reupload`` 决定输入是否被每层重新嵌入。量子权重 shape 不变，
+    因此可以和「只测 Z」的基线做**初始权重逐元素相同**的受控对照。
+    """
+
+    def __init__(
+        self,
+        n_qubits: int,
+        n_classes: int,
+        n_layers: int = 2,
+        encoding: str = "amplitude",
+        observables: str = "z",
+        n_features: int = 784,
+        reupload: bool = False,
+        head: str = "mlp",
+        scale=1.0,
+        hidden: int = 32,
+        diff_method: str = "backprop",
+        shots: int | None = None,
+    ):
+        super().__init__()
+        self.q = make_rich_layer(
+            n_qubits=n_qubits, n_layers=n_layers, encoding=encoding,
+            observables=observables, n_features=n_features,
+            reupload=reupload, diff_method=diff_method, shots=shots,
+        )
+        self.readout_dim = n_readout(n_qubits, observables)
+        self.head = _build_head(self.readout_dim, n_classes, head, hidden)
+        _set_scale(self, scale)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        z = self.q(x.to(torch.float32)).to(torch.float32)
         return self.head(z * self.out_scale)
 
 
@@ -205,3 +245,39 @@ class HybridCNNClassifier(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         z = self.quantum_features(x)
         return self.head(z * self.out_scale)
+
+
+class HybridRichClassifier(HybridCNNClassifier):
+    """CNN 前端 → **多可观测量 / 重上传**量子头 → 经典非线性头。
+
+    在 :class:`HybridCNNClassifier` 之上换掉量子层，用来检验「解开 n 个有界
+    读数」在混合架构里是否同样有效。``quantum=False`` 时跳过量子层，head
+    自动改接前端的 n_qubits 维特征，仍是等架构的经典对照。
+    """
+
+    def __init__(
+        self,
+        n_qubits: int = 8,
+        n_classes: int = 10,
+        n_layers: int = 2,
+        hidden: int = 32,
+        quantum: bool = True,
+        head: str = "mlp",
+        scale=1.0,
+        frontend: str = "light",
+        observables: str = "z",
+        reupload: bool = False,
+        diff_method: str = "backprop",
+    ):
+        # 不调用 super().__init__()：量子层与 head 维度都要按新规格重建
+        nn.Module.__init__(self)
+        self.backbone, width = _cnn_backbone(frontend)
+        self.pre_net = nn.Sequential(nn.Linear(width, n_qubits), nn.Tanh())
+        self.q = (make_rich_layer(
+            n_qubits=n_qubits, n_layers=n_layers, encoding="angle",
+            observables=observables, reupload=reupload,
+            diff_method=diff_method) if quantum else None)
+        dim = (n_readout(n_qubits, observables) if quantum else n_qubits)
+        self.readout_dim = dim
+        self.head = _build_head(dim, n_classes, head, hidden)
+        _set_scale(self, scale)
