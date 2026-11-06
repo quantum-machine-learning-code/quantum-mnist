@@ -1,0 +1,133 @@
+{
+  "purpose": "解释 0.866 的结构性上限：归一化信息损失 / 二次型天花板 / 无平移不变性",
+  "config": {
+    "data_source": "idx",
+    "data_dir": "data",
+    "pool_train": 3000,
+    "test_samples": 200,
+    "classes": 10,
+    "train_samples": 600,
+    "scaling_points": "600,1800,3000",
+    "torch_threads": 2,
+    "archive": "docs/why_low_metrics.json",
+    "fig_dir": "docs/figures",
+    "no_figures": false
+  },
+  "data_meta": {
+    "source": "idx",
+    "note": "real MNIST via idx; NO PCA; full 784-d; per-sample L2 normalized for amplitude encoding",
+    "pool_train": 3000,
+    "test_samples": 200,
+    "same_split_asserted": true
+  },
+  "theory": {
+    "quantum_feature": "f_j(x) = <x|U† P_j U|x>，振幅编码下是归一化像素的齐次二次型",
+    "n_qubits": 10,
+    "hilbert_dim": 1024,
+    "independent_homogeneous_quadratic_monomials_784d": 307720,
+    "traceless_hermitian_operator_dim": 1048575,
+    "readout_dim_165": 165,
+    "note": "165 个观测量是 4^10-1 维无迹厄米算符空间里的 165 个方向；poly-2 核 (coef0=0) 给出全部齐次二次单项式，是量子特征类的超集"
+  },
+  "normalization_loss": {
+    "chance_level": 0.1,
+    "norm_only_logreg_acc": 0.215,
+    "raw_pixels_probe": {
+      "plain_logreg": 0.85,
+      "plain_rbf": 0.92,
+      "plain_poly2_c0": 0.88,
+      "plain_poly2_c1": 0.895,
+      "scaled_logreg": 0.835,
+      "scaled_rbf": 0.865,
+      "scaled_poly2_c0": 0.845,
+      "scaled_poly2_c1": 0.9
+    },
+    "l2_normalized_pixels_probe": {
+      "plain_logreg": 0.83,
+      "plain_rbf": 0.915,
+      "plain_poly2_c0": 0.925,
+      "plain_poly2_c1": 0.925,
+      "scaled_logreg": 0.835,
+      "scaled_rbf": 0.86,
+      "scaled_poly2_c0": 0.865,
+      "scaled_poly2_c1": 0.88
+    },
+    "note": "振幅编码必须逐样本除以 ||x||；若仅用 ||x|| 一维就能超过 chance，说明被丢弃的墨量/亮度标量本身携带类别信息"
+  },
+  "quadratic_ceiling": {
+    "points": {
+      "600": {
+        "n_train": 600,
+        "plain_logreg": 0.83,
+        "plain_rbf": 0.915,
+        "plain_poly2_c0": 0.925,
+        "plain_poly2_c1": 0.925,
+        "scaled_logreg": 0.835,
+        "scaled_rbf": 0.86,
+        "scaled_poly2_c0": 0.865,
+        "scaled_poly2_c1": 0.88
+      },
+      "1800": {
+        "n_train": 1800,
+        "plain_logreg": 0.88,
+        "plain_rbf": 0.95,
+        "plain_poly2_c0": 0.945,
+        "plain_poly2_c1": 0.94,
+        "scaled_logreg": 0.875,
+        "scaled_rbf": 0.92,
+        "scaled_poly2_c0": 0.925,
+        "scaled_poly2_c1": 0.935
+      },
+      "3000": {
+        "n_train": 3000,
+        "plain_logreg": 0.895,
+        "plain_rbf": 0.965,
+        "plain_poly2_c0": 0.96,
+        "plain_poly2_c1": 0.955,
+        "scaled_logreg": 0.865,
+        "scaled_rbf": 0.94,
+        "scaled_poly2_c0": 0.965,
+        "scaled_poly2_c1": 0.935
+      }
+    },
+    "quantum_165dim_readout_probe_same_protocol": {
+      "plain_logreg": 0.81,
+      "plain_rbf": 0.87,
+      "plain_poly2_c0": 0.85,
+      "plain_poly2_c1": 0.845,
+      "scaled_logreg": 0.835,
+      "scaled_rbf": 0.875,
+      "scaled_poly2_c0": 0.855,
+      "scaled_poly2_c1": 0.875
+    },
+    "reference_from_archive": {
+      "quantum_165dim_frozen_upper_bound": 0.89,
+      "quantum_165dim_frozen_poly2": 0.9,
+      "quantum_165dim_e2e_600": 0.845,
+      "quantum_165dim_e2e_1800": 0.866,
+      "classical_pca165_equal_budget_1800": 0.903,
+      "strong_cnn_600": 0.934
+    },
+    "note": "scaled_* 口径与 probe_information.py 一致（StandardScaler + C=10 + coef0=1）；plain_* 是未标准化对照，两套数字不可混比。poly-2 核给出全部 307720 个齐次二次单项式，是量子 165 维读出的超集；两者在同口径下的差值 = 读出投影数太少造成的可分性缺口，而端到端 0.845/0.866 与冻结上界的差值 = 训练/泛化缺口"
+  },
+  "translation_sensitivity": {
+    "state_cosine_after_1px_shift_mean": 0.6732,
+    "state_cosine_after_1px_shift_median": 0.6789,
+    "same_class_state_cosine_mean": 0.5324,
+    "same_class_state_cosine_median": 0.5326,
+    "n_same_class_pairs": 1900,
+    "readout_165_relative_change_by_shift": 1.0436,
+    "readout_165_shift_vs_within_class_spread": 1.1951,
+    "readout_165_shift_l2_mean": 0.449,
+    "readout_165_spread_l2_mean": 0.4303,
+    "readout_165_within_class_spread_l2_mean": 0.3757,
+    "reference": {
+      "b165_d1800_real_images": 0.866,
+      "b165_aug_shift_x3": 0.822,
+      "paired_delta_pt": -4.4
+    },
+    "note": "振幅编码把整图当作一个全局态向量，没有局部感受野 / 池化。若 1px 平移使态内积接近甚至低于同类内平均，增强样本就不是有效的同类扩充"
+  },
+  "wall_seconds": 37.84,
+  "caveat": "A/B 用 sklearn 探针（非端到端训练），C/gamma 沿用历史归档设置未另调参；scaled_* 与 plain_* 是两套预处理口径，禁止混比——本脚本并列两者正是为了避免把 StandardScaler / coef0 的差异误读成信息量差异；poly2 核在 784 维上等价于 307720 个二次单项式，是量子 165 维读出的超集，两者不是等预算对照，只能读成「特征类上限」；C 部分量子读出用随机酉（诊断已证明随机酉冻结上界 0.860 与训练后 0.890 接近），不是训练后权重；数据规模扫描与正式实验共用同一嵌套切分，但探针与端到端模型不同，不做逐位比较。"
+}
