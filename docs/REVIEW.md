@@ -198,6 +198,50 @@ batch 32、lr 0.01、**5 个 seed**。数据切分固定 `seed=0`（方差只来
 4. 更多 seed（≥20）与多重比较校正，给第 5 节那些「不显著」项更紧的置信区间。
 5. 噪声模型、有限 `--shots`、`lightning.gpu` 后端。
 
+## 7. 外部精度基准：参考实现到底能到多少
+
+> 起因：用户问「你参考的只有 60% 多的准确率？」。**0.6640 是本仓库自己跑出的数字，不是抄自任何参考实现。**
+> 第 4 节只对照了架构与超参，没有建立外部精度基准，这是审查的遗漏。本节补上（2026-11-06 实检索）。
+
+**先把可比性说清楚**：下表**不能横向排名**。类别数（2 vs 10）、训练样本（50 vs 60000）、
+是否有 ImageNet 预训练前端、量子电路是否可训练、经典后处理规模全都不同；同一篇论文里
+10 类与 2 类能差 20–30 pt。很多标题写「MNIST」的 QML 论文其实只做 0/1 二分类。
+
+| 参考实现 | 任务口径 | 报告准确率 | 与本仓库的关键差异 | 来源 |
+| --- | --- | --- | --- | --- |
+| PennyLane *Quantum transfer learning* demo | **非 MNIST**：ants/bees 2 类，3 epochs | `0.8497`（页面打印 `Best test accuracy`，实为验证集最佳） | ResNet18(ImageNet) 冻结提 512 维特征 → `Linear(512,4)` → `tanh*π/2` → 4-qubit QNN → `Linear(4,2)`；**pre_net 与 post_net 都有** | [3] |
+| 同论文 Mari et al. 2019，30 epochs | 同上 2 类 | `0.967`（simulator）；真机 ibmqx4 `0.95` / Aspen-4-4 `0.80` | 同上 + 每 10 epoch 降 lr | [16] |
+| QCNN, Hur et al. 2021 | MNIST **0/1 二分类**，12665 / 2115 | 约 `99%`（表内最高 98.7%，5 次重复） | PCA / autoencoder 预处理 + 多种编码 + 卷积式量子滤波；**不是 10 类** | [17] |
+| Quanvolution 小样本对照（Sooksatra 2021；综述 Table 5） | MNIST **10 类**，50 训练 / 30 测试，30 epochs | CNN `0.6667` / QNN **`0.7000`** | 固定不可训练量子核 + 经典线性/CNN 后处理；**唯一与本仓库同难度档** | [18][19] |
+| VSQL, AAAI 2021 | MNIST **10 类**，全量 60000 / 10000 | `91.13%`（**二级来源，原文结果表未抓到，待核**） | 局部 shadow circuits 滑动提取特征 + 经典 FCNN(softmax)，约 928 参数 | [20] |
+| MPS 混合变分分类器, ICASSP 2025 | MNIST 10 类 | `95.96%`（二分类 99.95%） | MPS 表示的硬件高效线路 + 最小残差 | [21] |
+| 并行量子线路混合模型, Senokosov 2023 | MNIST 10 类，full dataset | `99.21%` | 并行量子线路 + 经典主干，参数量为对应经典模型 1/8 | [22] |
+| 经典 CNN | MNIST 10 类 | `>99%` | 公认基线 | — |
+| **本仓库（5 seed）** | MNIST 10 类，**600 / 200**，24 epochs | **`0.6640 ± 0.0216`** | **无预训练前端、单次编码、仅 n 个 `PauliZ` 读出、纯端到端 VQC** | `docs/multiseed_metrics.json` |
+
+**三条解读**
+
+1. **「60% 多」是一个真实存在的档位，但只在最难的角落**：极小样本 + 10 类 + 无预训练前端 +
+   量子侧承担几乎全部判别。综述里 50 张训练图的 quanvolution 是 `0.6667 / 0.7000`，
+   与我们用 600 张图得到的 `0.664` 几乎重合 —— 说明我们**卡在同一档**，而不是「参考项目就这水平」。
+2. **别人的 90–99% 不是靠堆 qubits / 参数**：靠的是第 4 节列出的、我们缺的三件东西 ——
+   **经典特征前端**（ResNet18 / CAE / CNN）、**经典非线性 post_net**、**多局部读出**
+   （VSQL shadow circuits / quanvolution 逐区域测量）。这与第 5 节「深度 8→16 层几乎不动」
+   和两条表达力上界一致：瓶颈在信息进出量子层的方式，不在量子层规模。
+3. 因此 `0.664` 应读作「**未采用参考实现架构的基线结果**」，不是「QML 在 MNIST 上的水平」。
+   把它推到 90%+ 的最小改动是加 CNN/CAE 前端 + `tanh(·)*π/2` 输入缩放 + 已有的 MLP 头，
+   即第 6 节待修 #2；这也是下一步实验最值得做的方向。
+
+**未取到 / 待核（不编数字）**
+
+- Qiskit 官方 `TorchConnector` MNIST 教程原链接已 404，本轮未拿到官方确切准确率（第三方同类
+  二分类项目 README 写 85–95%，非官方数据，不纳入上表）。参考 [4][10] 的 URL 需换有效地址。
+- ICCAD 2021 [7] 的 Table III 在 HTML 中只剩标题与相对提升（`+14.1%` train / `+25.3%` val
+  accuracy），绝对数值在表格图片里，未取到。可确认的是它**有经典 CAE/PCA 前端 + 经典全连接后处理**，
+  不是纯 QNN。
+- VSQL 的 `91.13%` 来自二级摘要；arXiv HTML 的 MNIST 结果表未包含在抓取内容中，
+  原文只确认了 10 类用全量数据集、量子 shadow features 后接经典 FCNN。**核对前不作为结论引用。**
+
 ## 参考（均为 2026-11-06 实检索）
 
 1. PennyLane `qml.qnn.TorchLayer` 文档（默认 `[0,2π]`、`init_method`）：https://docs.pennylane.ai/en/stable/code/api/pennylane.qnn.TorchLayer.html
@@ -215,3 +259,12 @@ batch 32、lr 0.01、**5 个 seed**。数据切分固定 `seed=0`（方差只来
 13. PennyLane data-reuploading classifier demo：https://www.pennylane.ai/demos/tutorial_data_reuploading_classifier
 14. Schuld, *Supervised quantum machine learning models are kernel methods*：https://arxiv.org/abs/2101.11020
 15. McClean et al., *Barren plateaus*, Nat. Commun. 9 4812：https://arxiv.org/abs/1803.11173 ；Grant et al., *An initialization strategy*, Quantum 3 214：https://arxiv.org/abs/1903.05076
+16. Mari et al., *Transfer learning in hybrid classical-quantum neural networks*, Quantum 4 340（`0.967` / QPU `0.95`、`0.80`）：https://arxiv.org/abs/1912.08278
+17. Hur et al., *Quantum convolutional neural network for classical data classification*（MNIST 0/1，约 99%）：https://arxiv.org/abs/2108.00661
+18. Sooksatra et al., *Evaluating Accuracy and Adversarial Robustness of Quanvolutional Neural Networks*（50 训练图）：https://www.rivas.ai/pdfs/sooksatra2021evaluating.pdf
+19. *Quantum Machine Learning: A Review and Case Studies*, Table 5（CNN 0.6667 / QNN 0.7000）：https://pmc.ncbi.nlm.nih.gov/articles/PMC9955545/
+20. Li, Song, Wang, *VSQL: Variational Shadow Quantum Learning for Classification*, AAAI 2021：https://arxiv.org/abs/2012.08288
+21. Sun, Xu, Duan, *An Efficient Hybrid Quantum Variational Classifier With Matrix Product State*, ICASSP 2025（10 类 95.96%）：https://doi.org/10.1109/ICASSP49660.2025.10888238
+22. Senokosov et al., *Quantum machine learning for image classification*（10 类 99.21%）：https://arxiv.org/abs/2304.09224
+
+> 注：参考 [4] 与 [10] 的 Qiskit 教程链接在 2026-11-06 复核时已 404，第 7 节据此未引用其准确率数字。
