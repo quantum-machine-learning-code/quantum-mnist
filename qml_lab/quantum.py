@@ -126,16 +126,23 @@ def make_amplitude_layer(
 #   * reupload:    每一层重新嵌入输入，把单次编码的 degree-1 傅里叶谱提高
 # ---------------------------------------------------------------------------
 
-_READOUT_PARTS = ("z", "x", "y", "zz")
+_READOUT_PARTS = ("z", "x", "y", "zz", "zzall", "xxall", "yyall")
 
 
 def make_observables(n_qubits: int, spec: str):
     """按 ``+`` 分隔的规格构造可观测测量表。
 
     ``z`` / ``x`` / ``y`` 各贡献 n 个单比特期望；``zz`` 贡献 n 个相邻环
-    ``Z_i Z_{i+1}`` 关联（两体关联比单比特期望携带更多输入信息）。
+    ``Z_i Z_{i+1}`` 关联；``zzall`` / ``xxall`` / ``yyall`` 贡献
+    **所有** ``n(n-1)/2`` 个两体关联（如 ``Z_i Z_j``，i<j）。
+    两体关联比单比特期望携带更多输入信息：振幅编码 + 酉 + Pauli 期望
+    整体是输入的二次型，扩充观测量等于扩充可访问的二次统计量集合。
+
     ``default.qubit`` 在解析模式下允许互不対易的可观测量同时测量；
-    有限 shots 时 PennyLane 会自动按对易组拆分。
+    有限 shots 时 PennyLane 会自动按对易组拆分（更多观测量 = 更多 shots）。
+
+    规格按固定顺序展开，与 ``+`` 里的书写顺序无关；旧规格 ``"z"`` /
+    ``"z+x+y+zz"`` 的展开顺序保持不变，以保证回归测试逐位一致。
     """
     parts = [p.strip().lower() for p in spec.split("+")]
     unknown = [p for p in parts if p not in _READOUT_PARTS]
@@ -151,6 +158,15 @@ def make_observables(n_qubits: int, spec: str):
     if "zz" in parts:
         ops.extend(qml.PauliZ(i) @ qml.PauliZ((i + 1) % n_qubits)
                    for i in range(n_qubits))
+    if "zzall" in parts:
+        ops.extend(qml.PauliZ(i) @ qml.PauliZ(j)
+                   for i in range(n_qubits) for j in range(i + 1, n_qubits))
+    if "xxall" in parts:
+        ops.extend(qml.PauliX(i) @ qml.PauliX(j)
+                   for i in range(n_qubits) for j in range(i + 1, n_qubits))
+    if "yyall" in parts:
+        ops.extend(qml.PauliY(i) @ qml.PauliY(j)
+                   for i in range(n_qubits) for j in range(i + 1, n_qubits))
     return ops
 
 

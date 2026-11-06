@@ -153,6 +153,20 @@ def check_readout_layers() -> None:
         assert g is not None and bool(torch.isfinite(g).all()) and float(g.norm()) > 0, \
             f"{spec} 梯度缺失 / 非有限 / 全零"
 
+    # 全两体关联读出：维度 = 3n 单比特 + k * n(n-1)/2 个两体项
+    pairs = nq * (nq - 1) // 2
+    for spec, expected in (("z+x+y+zzall", 3 * nq + pairs),
+                           ("z+x+y+zzall+xxall+yyall", 3 * nq + 3 * pairs)):
+        assert n_readout(nq, spec) == expected, f"{spec} 维度错误"
+        set_seed(0)
+        wide = make_rich_layer(nq, 2, "amplitude", spec, n_features=16)
+        out = wide(x)
+        assert tuple(out.shape) == (B, expected), f"{spec} 前向形状错误"
+        out.pow(2).mean().backward()
+        g = wide.layer.weights.grad
+        assert g is not None and bool(torch.isfinite(g).all()) and float(g.norm()) > 0, \
+            f"{spec} 梯度缺失 / 非有限 / 全零"
+
     # 重上传：参数 shape 与初始权重不变，但输入被每层重新嵌入
     set_seed(0)
     plain = make_rich_layer(nq, 2, "angle", "z+x")

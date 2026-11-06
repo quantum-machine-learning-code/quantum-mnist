@@ -1,0 +1,440 @@
+{
+  "config": {
+    "seeds": "0",
+    "epochs": 24,
+    "train_samples": 600,
+    "test_samples": 200,
+    "batch_size": 32,
+    "lr": 0.01,
+    "hidden": 32,
+    "classes": 10,
+    "data_source": "idx",
+    "data_dir": "data",
+    "out": "results",
+    "archive": "docs/info_metrics.json",
+    "big_train": 12000,
+    "no_classical": false
+  },
+  "data_meta": {
+    "source": "idx",
+    "n_classes": 10,
+    "n_features": 784,
+    "class_ids": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9
+    ],
+    "encoding": "amplitude",
+    "pca": false,
+    "note": "real MNIST via idx; NO PCA; full 784-d; per-sample L2 normalized for amplitude encoding",
+    "n_train": 600,
+    "n_test": 200,
+    "seed": 0,
+    "fallback_reasons": []
+  },
+  "purpose": "把 0.772 的剩余 gap 分解为训练 / 读出宽度 / 二次型表达力 / 数据与归纳偏置；冻结特征探针是可分性上界，不是端到端训练结果",
+  "trained_run": {
+    "test_acc": [
+      0.475,
+      0.605,
+      0.625,
+      0.69,
+      0.715,
+      0.755,
+      0.775,
+      0.735,
+      0.74,
+      0.75,
+      0.75,
+      0.785,
+      0.765,
+      0.745,
+      0.735,
+      0.765,
+      0.755,
+      0.77,
+      0.77,
+      0.78,
+      0.77,
+      0.755,
+      0.77,
+      0.775
+    ],
+    "train_loss": [
+      2.1835,
+      1.6108,
+      1.1194,
+      0.8838,
+      0.7767,
+      0.6685,
+      0.5999,
+      0.5378,
+      0.4837,
+      0.4547,
+      0.4154,
+      0.381,
+      0.3562,
+      0.3411,
+      0.3263,
+      0.2923,
+      0.2761,
+      0.2569,
+      0.2448,
+      0.2286,
+      0.2033,
+      0.2085,
+      0.1707,
+      0.1674
+    ],
+    "q_grad_norm": [
+      0.048492,
+      0.144149,
+      0.284281,
+      0.490609,
+      0.392658,
+      0.644036,
+      0.690675,
+      0.811778,
+      0.958394,
+      0.671508,
+      0.837006,
+      0.706482,
+      0.598476,
+      0.736776,
+      0.833879,
+      0.722833,
+      0.849996,
+      1.34045,
+      1.534535,
+      0.702434,
+      0.89499,
+      0.806176,
+      0.767305,
+      0.897241
+    ],
+    "q_drift": [
+      0.559273,
+      0.898263,
+      1.172243,
+      1.337578,
+      1.466674,
+      1.528229,
+      1.55012,
+      1.58633,
+      1.61252,
+      1.628098,
+      1.690956,
+      1.706012,
+      1.731609,
+      1.723612,
+      1.740556,
+      1.767751,
+      1.78367,
+      1.781253,
+      1.780686,
+      1.834913,
+      1.815876,
+      1.814186,
+      1.820622,
+      1.827207
+    ],
+    "final_test_acc": 0.775,
+    "seconds": 91.89,
+    "quantum_param_count": 60,
+    "weight_change_norm": 1.827207,
+    "weight_relative_change": 0.068944
+  },
+  "pixel_probe": {
+    "dim": 784,
+    "logreg": 0.835,
+    "rbf_svc": 0.855,
+    "mlp": 0.82
+  },
+  "pixel_data_scaling": {
+    "source": "idx",
+    "test_fixed": true,
+    "points": {
+      "600": {
+        "logreg": 0.86,
+        "rbf_svc": 0.85,
+        "mlp": 0.84
+      },
+      "3000": {
+        "logreg": 0.89,
+        "rbf_svc": 0.925,
+        "mlp": 0.92
+      },
+      "12000": {
+        "logreg": 0.9,
+        "rbf_svc": 0.95,
+        "mlp": 0.97
+      }
+    }
+  },
+  "readout_probes": {
+    "z": {
+      "spec": "z",
+      "dim": 10,
+      "states": {
+        "random": {
+          "logreg": 0.395,
+          "rbf_svc": 0.43,
+          "mlp": 0.445
+        },
+        "zero": {
+          "logreg": 0.35,
+          "rbf_svc": 0.345,
+          "mlp": 0.38
+        },
+        "trained": {
+          "logreg": 0.565,
+          "rbf_svc": 0.63,
+          "mlp": 0.58,
+          "poly2_svc": 0.63,
+          "poly3_svc": 0.59,
+          "geometry": {
+            "effective_rank_99": 10,
+            "singular_values_head": [
+              1.9243,
+              1.6691,
+              1.1379,
+              0.9906,
+              0.8977,
+              0.7644,
+              0.7477,
+              0.7129,
+              0.6661,
+              0.6486
+            ],
+            "variance_first_component": 0.3064,
+            "fisher_ratio": 32.1608
+          },
+          "readout_std": 0.0525
+        }
+      }
+    },
+    "z+x": {
+      "spec": "z+x",
+      "dim": 20,
+      "states": {
+        "random": {
+          "logreg": 0.52,
+          "rbf_svc": 0.65,
+          "mlp": 0.605
+        },
+        "zero": {
+          "logreg": 0.57,
+          "rbf_svc": 0.655,
+          "mlp": 0.625
+        },
+        "trained": {
+          "logreg": 0.635,
+          "rbf_svc": 0.73,
+          "mlp": 0.695,
+          "poly2_svc": 0.715,
+          "poly3_svc": 0.71,
+          "geometry": {
+            "effective_rank_99": 19,
+            "singular_values_head": [
+              2.2776,
+              1.8166,
+              1.6666,
+              1.3996,
+              1.2557,
+              1.1468,
+              1.0306,
+              0.9614,
+              0.9274,
+              0.8511,
+              0.7535,
+              0.7446
+            ],
+            "variance_first_component": 0.2185,
+            "fisher_ratio": 24.8168
+          },
+          "readout_std": 0.0545
+        }
+      }
+    },
+    "z+x+y+zz": {
+      "spec": "z+x+y+zz",
+      "dim": 40,
+      "states": {
+        "random": {
+          "logreg": 0.64,
+          "rbf_svc": 0.765,
+          "mlp": 0.72
+        },
+        "zero": {
+          "logreg": 0.62,
+          "rbf_svc": 0.72,
+          "mlp": 0.675
+        },
+        "trained": {
+          "logreg": 0.745,
+          "rbf_svc": 0.815,
+          "mlp": 0.755,
+          "poly2_svc": 0.79,
+          "poly3_svc": 0.8,
+          "geometry": {
+            "effective_rank_99": 37,
+            "singular_values_head": [
+              2.5136,
+              1.9739,
+              1.8051,
+              1.6928,
+              1.5312,
+              1.4357,
+              1.2296,
+              1.1341,
+              1.0848,
+              1.0743,
+              0.9888,
+              0.9615
+            ],
+            "variance_first_component": 0.1626,
+            "fisher_ratio": 23.7025
+          },
+          "readout_std": 0.0485
+        }
+      }
+    },
+    "z+x+y+zzall": {
+      "spec": "z+x+y+zzall",
+      "dim": 75,
+      "states": {
+        "random": {
+          "logreg": 0.77,
+          "rbf_svc": 0.82,
+          "mlp": 0.77
+        },
+        "zero": {
+          "logreg": 0.66,
+          "rbf_svc": 0.74,
+          "mlp": 0.675
+        },
+        "trained": {
+          "logreg": 0.83,
+          "rbf_svc": 0.87,
+          "mlp": 0.83,
+          "poly2_svc": 0.85,
+          "poly3_svc": 0.86,
+          "geometry": {
+            "effective_rank_99": 67,
+            "singular_values_head": [
+              3.5964,
+              3.2162,
+              2.193,
+              2.0107,
+              1.8091,
+              1.8005,
+              1.5828,
+              1.5015,
+              1.3576,
+              1.3361,
+              1.2728,
+              1.1904
+            ],
+            "variance_first_component": 0.1718,
+            "fisher_ratio": 23.6701
+          },
+          "readout_std": 0.0701
+        }
+      }
+    },
+    "z+x+y+zzall+xxall+yyall": {
+      "spec": "z+x+y+zzall+xxall+yyall",
+      "dim": 165,
+      "states": {
+        "random": {
+          "logreg": 0.78,
+          "rbf_svc": 0.86,
+          "mlp": 0.8
+        },
+        "zero": {
+          "logreg": 0.81,
+          "rbf_svc": 0.83,
+          "mlp": 0.785
+        },
+        "trained": {
+          "logreg": 0.84,
+          "rbf_svc": 0.89,
+          "mlp": 0.855,
+          "poly2_svc": 0.9,
+          "poly3_svc": 0.895,
+          "geometry": {
+            "effective_rank_99": 140,
+            "singular_values_head": [
+              3.8902,
+              3.6932,
+              2.7718,
+              2.4573,
+              2.3523,
+              2.2476,
+              2.1416,
+              1.9848,
+              1.7844,
+              1.6922,
+              1.6254,
+              1.5532
+            ],
+            "variance_first_component": 0.1152,
+            "fisher_ratio": 18.3358
+          },
+          "readout_std": 0.0577
+        }
+      }
+    }
+  },
+  "classical_pca_reference": {
+    "10": {
+      "dim": 10,
+      "source": "idx",
+      "logreg": 0.76,
+      "rbf_svc": 0.86,
+      "mlp": 0.82
+    },
+    "20": {
+      "dim": 20,
+      "source": "idx",
+      "logreg": 0.855,
+      "rbf_svc": 0.93,
+      "mlp": 0.89
+    },
+    "40": {
+      "dim": 40,
+      "source": "idx",
+      "logreg": 0.84,
+      "rbf_svc": 0.92,
+      "mlp": 0.865
+    },
+    "75": {
+      "dim": 75,
+      "source": "idx",
+      "logreg": 0.785,
+      "rbf_svc": 0.87,
+      "mlp": 0.795
+    },
+    "165": {
+      "dim": 165,
+      "source": "idx",
+      "logreg": 0.765,
+      "rbf_svc": 0.845,
+      "mlp": 0.685
+    }
+  },
+  "weight_change": {
+    "norm": 1.827207,
+    "relative": 0.068944,
+    "grad_norm_first_epoch": 0.048492,
+    "grad_norm_last_epoch": 0.897241
+  },
+  "caveat": "除 40 维训练组外均为单 seed 示意性诊断；结论性数字见 push_ceiling.py 的 5 seed 正式对照。探针为冻结特征 + 经典分类器的可分性上界；poly 核在 165 维上可能过拟合；更多观测量在真机上需要更多测量分组与 shots。"
+}
