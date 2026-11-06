@@ -9,8 +9,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import numpy as np
 import torch
 
-from qml_lab.data import load_mnist
-from qml_lab.models import MLPClassifier, VQCClassifier
+from qml_lab.data import load_mnist, load_mnist_images, load_mnist_raw
+from qml_lab.models import (
+    CNNClassifier, HybridCNNClassifier, MLPClassifier, VQCClassifier,
+)
 from qml_lab.train import train_classifier
 from qml_lab.utils import set_seed
 
@@ -83,9 +85,44 @@ def check_heads_and_controls() -> None:
     assert torch.equal(a, b), "构造前 set_seed 未能固定 TorchLayer 初始权重"
 
 
+def check_hybrid_and_images() -> None:
+    """图像数据路径与混合 CNN 前端：形状、抽样一致性、前向与梯度。"""
+    X, y, Xt, yt, meta = load_mnist_images(
+        n_train=16, n_test=8, classes=2, source="synthetic", seed=0)
+    Xr, yr, Xrt, yrt, _ = load_mnist_raw(
+        n_train=16, n_test=8, classes=2, source="synthetic", seed=0)
+    assert X.shape == (16, 1, 28, 28), f"图像形状错误 {X.shape}"
+    assert meta["shape"] == "NCHW" and not meta["pca"]
+    assert np.array_equal(y, yr) and np.array_equal(yt, yrt), "两条数据路径抽样不一致"
+    flat = X.reshape(len(X), -1) * 255.0
+    expected = flat / np.linalg.norm(flat, axis=1, keepdims=True)
+    assert np.allclose(Xr, expected, atol=1e-4), "raw 与 images 的像素不一致"
+
+    xb = torch.as_tensor(X[:4], dtype=torch.float32)
+    for frontend in ("light", "heavy"):
+        for quantum in (True, False):
+            set_seed(0)
+            model = HybridCNNClassifier(
+                n_qubits=2, n_classes=2, n_layers=1, hidden=8,
+                quantum=quantum, head="mlp", scale=1.0, frontend=frontend)
+            z = model.quantum_features(xb)
+            assert tuple(z.shape) == (4, 2), f"读出形状错误 {z.shape}"
+            out = model(xb)
+            assert tuple(out.shape) == (4, 2), f"logits 形状错误 {out.shape}"
+            out.sum().backward()
+            for name, p in model.named_parameters():
+                assert p.grad is not None and bool(torch.isfinite(p.grad).all()), \
+                    f"{frontend}/quantum={quantum} 的 {name} 梯度缺失或非有限"
+        cnn = CNNClassifier(2, frontend=frontend)
+        out = cnn(xb)
+        assert tuple(out.shape) == (4, 2)
+        out.sum().backward()
+
+
 def main() -> None:
     check_classifier()
     check_heads_and_controls()
+    check_hybrid_and_images()
     print("SMOKE OK")
 
 

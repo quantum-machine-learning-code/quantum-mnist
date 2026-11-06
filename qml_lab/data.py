@@ -10,7 +10,7 @@ from pathlib import Path
 
 import numpy as np
 
-__all__ = ["load_mnist", "load_mnist_raw"]
+__all__ = ["load_mnist", "load_mnist_raw", "load_mnist_images"]
 
 # 数据源别名，方便其它模块用不同名字指定
 _SOURCE_ALIASES = {
@@ -231,6 +231,61 @@ def load_mnist(n_train=2000, n_test=500, n_features=4, classes=10,
         "seed": int(seed),
         "pca": used != "synthetic",
         "fallback_reasons": reasons,
+    }
+    return Xtr, ytr, Xte, yte, meta
+
+
+def load_mnist_images(n_train=600, n_test=200, classes=10,
+                      source="idx", data_dir="data", seed=0) -> tuple:
+    """返回保留 2D 结构的 MNIST：(N, 1, 28, 28)，float32，像素缩放到 [0, 1]。
+
+    专供经典 CNN 前端 / 混合模型使用。**抽样与 ``load_mnist_raw`` 逐样本相同**
+    （同一 seed、同一按类配额、同一 rng 调用顺序），所以两条数据路径比较的是
+    同一批图；区别只在于这里不做逐样本 L2 归一化（那是振幅编码专用的）。
+    """
+    if isinstance(classes, (int, np.integer)):
+        class_ids = list(range(int(classes)))
+    else:
+        class_ids = [int(c) for c in classes]
+    C = len(class_ids) or 1
+    counts_tr = _split_counts(n_train, C)
+    counts_te = _split_counts(n_test, C)
+
+    src = _normalize_source(source)
+    chain = ["idx", "torchvision", "openml"] if src == "auto" else (
+        ["idx"] if src == "idx" else ([] if src == "synthetic" else [src]))
+
+    Xtr = ytr = Xte = yte = None
+    used = "synthetic"
+    reasons: list[str] = []
+    for candidate in chain:
+        try:
+            Xr, yr, Xe, ye = _fetch_raw(candidate, data_dir)
+            rng = np.random.default_rng(seed)
+            Xtr, ytr = _select(Xr, yr, counts_tr, class_ids, rng)
+            Xte, yte = _select(Xe, ye, counts_te, class_ids, rng)
+            used = candidate
+            break
+        except Exception as e:
+            reasons.append(f"{candidate}: {type(e).__name__}: {e}")
+
+    if used == "synthetic":
+        Xtr, ytr, Xte, yte = _make_synthetic(counts_tr, counts_te, 784, C, seed)
+
+    def _img(X) -> np.ndarray:
+        A = np.asarray(X, dtype=np.float32) / 255.0
+        return np.ascontiguousarray(A.reshape(-1, 1, 28, 28), dtype=np.float32)
+
+    Xtr, Xte = _img(Xtr), _img(Xte)
+    ytr = np.ascontiguousarray(ytr, dtype=np.int64)
+    yte = np.ascontiguousarray(yte, dtype=np.int64)
+    meta = {
+        "source": used, "n_classes": C, "n_features": 784,
+        "class_ids": list(class_ids), "shape": "NCHW", "pca": False,
+        "note": ("SYNTHETIC - not real MNIST，仅用于离线冒烟测试" if used == "synthetic"
+                 else "real MNIST via %s; full 28x28 images; pixels /255" % used),
+        "n_train": int(Xtr.shape[0]), "n_test": int(Xte.shape[0]),
+        "seed": int(seed), "fallback_reasons": reasons,
     }
     return Xtr, ytr, Xte, yte, meta
 

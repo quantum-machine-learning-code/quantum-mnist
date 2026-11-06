@@ -24,6 +24,7 @@
 - **经典 MLP 仍领先约 20 pt、快约 80 倍**；参数预算也不对等（742 vs 25450），这不是公平的能力比较，更不是量子优势。
 - 旧的「振幅编码比角度编码好 +15.5 pt」**已证伪**：严格受控（同 10 qubits / 同 170 参数 / 同分类头 / 初始权重逐元素相同）下，5 seed 配对差值 **−0.10 ± 8.68 pt**，95% CI [−10.88, +10.68] 跨 0，逐 seed 符号相反。
 - **0.664 不是该领域的水平，也不是抄来的数字**：外部参考实现里，同样「小样本 10 类」的 quanvolution 对照报 0.6667 / 0.7000（50 张训练图），而带经典预训练前端 / 多局部读出的混合模型在 MNIST 10 类上报 91–99%，0/1 二分类普遍 95–99%。本仓库是**无预训练前端、单次编码、仅 n 个 `PauliZ` 读出**的纯端到端 VQC，落在这个子类别的常见区间，但明显低于参考实现的最好结果。完整对照与可比性说明见 [REVIEW.md 第 7 节](docs/REVIEW.md#7-外部精度基准参考实现到底能到多少)。
+- **66% 的原因已实测定位**：冻结量子层后，10 维 `PauliZ` 读出的可分性上限只有 0.679（原始像素 0.855）；训练 / 数据预算翻倍只值 +1.3 / +4.0 pt，而换经典 CNN 特征前端能到 0.863–0.934。见下方「为什么只有 66%：瓶颈分解」一节。
 
 > **⚠ 方法学审查（2026-11-06）**：本仓库最初未对照任何参考实现，且 `train_amplitude.py` 有种子 bug（模型构造早于 `set_seed`），使早期单次运行的结论不可用。现已修复并用 `train_multiseed.py` 重跑；下文[历史结果](#历史结果单次运行仅存档)只作存档，不用于下结论。完整问题清单、实测证据与 15 条参考链接见 [docs/REVIEW.md](docs/REVIEW.md)。
 
@@ -44,20 +45,22 @@ quantum-mnist/
 ├── requirements.txt
 ├── qml_lab/
 │   ├── utils.py                 # 随机种子、路径、JSON、参数量、终端表格
-│   ├── data.py                  # MNIST 加载：load_mnist（PCA）/ load_mnist_raw（全 784 维）
+│   ├── data.py                  # load_mnist（PCA）/ load_mnist_raw（784 维）/ load_mnist_images（28×28 图像）
 │   ├── quantum.py               # AngleEmbedding / AmplitudeEmbedding 两种可微分层
-│   ├── models.py                # VQCClassifier / AmplitudeVQCClassifier / MLPClassifier
+│   ├── models.py                # VQC / AmplitudeVQC / MLP / HybridCNN / CNN 五类模型
 │   ├── train.py                 # 分类训练循环与分批准确率评估
 │   └── viz.py                   # 指标图绘制
 ├── experiments/train_mnist.py   # 主实验：VQC vs MLP（历史单次运行）
 ├── experiments/train_amplitude.py  # 编码对照：振幅编码无需 PCA（历史单次运行）
 ├── experiments/scan_capacity.py    # 容量扫描：输入维度 vs 电路深度（历史单次运行）
 ├── experiments/train_multiseed.py  # **当前主结果**：5 seed 受控对照 + 统计
+├── experiments/diagnose_ceiling.py # 瓶颈分解：预算 / 架构 / 量子读出信息探针
 ├── tests/smoke_test.py          # 离线冒烟测试（不联网、不下载 MNIST）
 ├── docs/DEV_NOTES.md            # 本机环境与离线数据准备备注
 ├── docs/REVIEW.md               # 方法学审查：问题清单、实测证据、参考实现对照
 ├── docs/multiseed_metrics.json  # 归档的 5 seed 原始指标（可核对 README 数字）
-├── docs/figures/                # 实测对比图（已归档，含 multiseed_*）
+├── docs/ceiling_metrics.json    # 归档的瓶颈分解原始指标（9 组 × 5 seed + 探针）
+├── docs/figures/                # 实测对比图（含 multiseed_* / ceiling_*）
 ├── data/                        # 本地数据缓存（gitignore）
 └── results/                     # 运行产物（gitignore）
 ```
@@ -93,6 +96,15 @@ Windows 下把 `.venv/bin/python` 换成 `.venv\Scripts\python.exe`、路径改�
 ```
 
 产物：`results/multiseed_metrics.json`（自动归档到 `docs/multiseed_metrics.json`）、`docs/figures/multiseed_accuracy.png` 与 `multiseed_bars.png`。加 `--quick` 是离线极小自检，不用于结论。
+
+**瓶颈分解实验**（9 组 × 5 seed，纯 CPU 约 30 分钟，回答「为什么只有 66%」）：
+
+```bash
+.venv/bin/python experiments/diagnose_ceiling.py --data-source idx \
+    --out results --archive docs/ceiling_metrics.json --fig-dir docs/figures
+```
+
+产物：`docs/ceiling_metrics.json`（逐 seed 曲线、分组统计、读出探针）、`docs/figures/ceiling_ladder.png` 与 `ceiling_curves.png`。`--quick` 为离线自检。
 
 历史主实验（单次运行，仅存档）的复现命令：
 
@@ -183,6 +195,33 @@ Windows 下把 `.venv/bin/python` 换成 `.venv\Scripts\python.exe`、路径改�
 4. **仍然没追上经典**：同 PCA-4 输入下 `MLP-4` 0.588 > 最佳 Angle-4 0.498；全维 `MLP-784` 0.864 > 最佳量子 0.664。这与「单次角度编码是 degree-1 傅里叶 / 振幅编码是输入二次型」的表达力上界一致，堆 qubits 补不上。
 5. **口径限制**：固定数据集让方差只反映初始化与 shuffle；`n=5` 的 95% CI 用 t 分布、未做多重比较校正；参数预算不对等；仍是状态向量模拟，振幅编码在真机上需要 O(2ⁿ) 状态制备或 QRAM。
 
+### 为什么只有 66%：瓶颈分解（2026-11-06 三轮实验）
+
+`experiments/diagnose_ceiling.py`：真实 MNIST IDX、10 类、**5 seed**、数据切分固定 `seed=0`、每个模型构造前设种子。把训练预算、数据预算、架构三个候选瓶颈**分别单独加回去**，再加一个「冻结量子读出」的信息探针。原始数据（9 组逐 seed 曲线、探针、配对差值）：[`docs/ceiling_metrics.json`](docs/ceiling_metrics.json)。
+
+| 组 | 相对 base 的改动 | 参数 | 最终准确率 |
+| --- | --- | --- | --- |
+| base（Amp10 / MLP ×5） | — | 742 | 0.6640 ± 0.0216 |
+| 训练预算 ×2 | 只把 24 → 48 epochs | 742 | 0.6770 ± 0.0160 |
+| 数据预算 ×2 | 只把训练样本 600 → 1200 | 742 | 0.7040 ± 0.0104 |
+| 轻量 CNN，直接分类 | 换架构（自适应池化前端） | 3658 | **0.8630 ± 0.0428** |
+| 轻量 CNN + VQC | 同前端，但接 8-qubit 量子头 | 4258 | 0.5400 ± 0.2693 |
+| 强 CNN 前端 + VQC | 52k 参数前端 + 8-qubit 量子头 | 52674 | 0.9030 ± 0.0205 |
+| 强 CNN，直接分类 | 同前端，无量子层 | 52138 | **0.9340 ± 0.0108** |
+
+![九组配置的准确率阶梯（均值 ± 1 标准差）](docs/figures/ceiling_ladder.png)
+
+![训练与数据预算的收敛曲线](docs/figures/ceiling_curves.png)
+
+**结论：66% 几乎就是「量子读出里还剩多少信息」，不是没训够。**
+
+1. **预算不是主因**：训练翻倍 **+1.30 ± 1.89 pt**（CI 跨 0）、数据翻倍 **+4.00 ± 1.77 pt**（CI [+1.80, +6.20]）。曲线约 10 epoch 就进平台；48 epoch 的 loss 从 0.68 降到 0.50，准确率却几乎不动——模型是在对已经丢失的信息继续拟合。
+2. **读出是硬瓶颈**：冻结训练好的量子层，把 10 维 `PauliZ` 向量 z 交给经典强分类器（logreg / RBF-SVC / MLP），最高只有 **0.6790**，而端到端模型是 **0.6640** —— 分类头与优化器已经把 z 里的信息榨干，换更强的后处理也上不去。同样探针直接读原始 784 维像素可得 **0.8550**，量子链路丢掉了约 **17.6 pt** 的可分信息。`long` 组的 z 探针 0.6830 几乎没变，再次排除「训练不足」。
+3. **换表示能补回来**：同样 600 张图 / 24 epochs，让经典 CNN 先提特征，轻量前端（3.7k 参数）到 **0.8630**（配对 +19.90 ± 6.17 pt，CI [+12.24, +27.56]），强前端到 0.9030（+23.90 ± 3.99 pt）。所以 **66% 是「让量子层直接端到端判别」这条设计路线的天花板，不是 QML 的上限**。
+4. **但量子层在混合结构里也没有正贡献**：同一前端下，去掉量子层反而更高（轻量 0.758 vs 0.540；强前端 0.921 vs 0.903）。强前端配对差值 −1.80 ± 2.31 pt，4/5 seed 为负但 **CI 跨 0，不能宣称显著有害**；轻量前端有 1/5 seed 完全训练失败（acc 0.10、loss 2.30 ≈ ln10），标准差 0.269，说明「弱特征 + 8-qubit VQC」优化极不稳定。
+
+**限制**：`data` 组测试集为 300（base 为 200），绝对数值不完全可比；强前端 52k 参数多于 `MLP-784` 的 25k，参数预算仍不对等；量子层未单独调 lr / 初始化 / 深度，负贡献可能部分来自优化；探针是冻结特征的可分性上界、不是端到端训练；n=5、未做多重比较校正。完整协议与配对 CI 见 [docs/REVIEW.md](docs/REVIEW.md) 第 8 节。
+
 ### 历史结果（单次运行，仅存档）
 
 > 以下三节是 2026-11-06 审查**之前**的 `seed=0` 单次实验，其中编码对照还受种子 bug 影响。数字保留供追溯，**不得用于下结论**；所有结论性表述请看上一节与 [REVIEW.md](docs/REVIEW.md)。
@@ -263,6 +302,8 @@ Windows 下把 `.venv/bin/python` 换成 `.venv\Scripts\python.exe`、路径改�
 | `docs/multiseed_metrics.json` | **归档的 5 seed 原始数据**：每个 seed 的曲线 / loss / 耗时、受控性断言、汇总统计、配对差值与 95% CI |
 | `results/multiseed_metrics.json` | 同上（运行产物，被忽略） |
 | `docs/figures/multiseed_accuracy.png` / `multiseed_bars.png` | 均值 ± 1 标准差曲线 / 带误差棒的最终准确率 |
+| `docs/ceiling_metrics.json` | **归档的瓶颈分解原始数据**：9 组 × 5 seed 曲线、分组统计、量子读出探针、像素探针 |
+| `docs/figures/ceiling_ladder.png` / `ceiling_curves.png` | 九组配置准确率阶梯 / 预算翻倍的收敛曲线 |
 | `results/mnist_metrics.json` | 历史主实验：准确率、参数量、耗时、配置与 `meta`（含数据源标注） |
 | `results/mnist_accuracy.png` | 量子 vs 经典的测试准确率曲线 |
 | `results/mnist_params.png` / `mnist_time.png` | 参数量 / 耗时对比柱状图 |
@@ -275,9 +316,9 @@ Windows 下把 `.venv/bin/python` 换成 `.venv\Scripts\python.exe`、路径改�
 
 **PennyLane**（可微分量子电路）+ **PyTorch**（混合训练），辅以 scikit-learn（PCA）/ NumPy / Matplotlib；默认 `default.qubit` 状态向量模拟。[Qiskit Machine Learning](https://qiskit.github.io/qiskit-machine-learning/) 是接 IBM 生态时的另一条路线。
 
-**已实现**：amplitude encoding 无压缩对照（`train_amplitude.py`）、输入维度与电路深度分离的容量扫描（`scan_capacity.py`）、**5 seed 受控对照与配对差值置信区间**（`train_multiseed.py`）、带非线性的 MLP 分类头与固定 / 可学习输出缩放。方法学审查见 [`docs/REVIEW.md`](docs/REVIEW.md)。
+**已实现**：amplitude encoding 无压缩对照（`train_amplitude.py`）、输入维度与电路深度分离的容量扫描（`scan_capacity.py`）、**5 seed 受控对照与配对差值置信区间**（`train_multiseed.py`）、带非线性的 MLP 分类头与固定 / 可学习输出缩放、**9 组 × 5 seed 的瓶颈分解与量子读出信息探针**（`diagnose_ceiling.py`）、轻量 / 强特征两种混合 CNN 前端。方法学审查见 [`docs/REVIEW.md`](docs/REVIEW.md)。
 
-下一步：等参数预算对照、数据重上传（data re-uploading）、增加读出可观测量、量子核 QSVC 第三条基线、噪声模型与有限 `--shots`、`lightning.gpu` 后端推到 20+ qubits、混合 CNN 前端。
+下一步：等参数预算对照、给量子层单独调 lr / 初始化（轻量前端有 1/5 seed 训练失败）、数据重上传（data re-uploading）、多可观测量读出以突破「只有 n 个 `PauliZ` 数」的瓶颈、量子核 QSVC 第三条基线、噪声模型与有限 `--shots`、`lightning.gpu` 后端推到 20+ qubits。
 
 ## 相关仓库与许可
 
