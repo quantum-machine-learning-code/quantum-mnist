@@ -74,6 +74,7 @@ def main() -> None:
     # 自检模式下 2^4=16 < 784，用一个小特征数走通流程即可
     n_raw_features = 16 if args.quick else 784
     cfg = vars(args).copy()
+    set_seed(args.seed)  # 进程级可复现；每组模型构造前还会在 record() 内再次重置
     out_dir = ensure_dir(args.out)
 
     print("== 编码方式对照：角度编码（需 PCA） vs 振幅编码（无需 PCA）==", flush=True)
@@ -84,7 +85,12 @@ def main() -> None:
     histories: dict[str, Any] = {}
     metas: dict[str, Any] = {}
 
-    def record(name: str, model, X, y, Xt, yt, n_q: int, meta: dict) -> None:
+    def record(name: str, model_fn, X, y, Xt, yt, n_q: int, meta: dict) -> None:
+        # 关键：TorchLayer 的权重与分类头都在构造时消耗全局 RNG。
+        # 必须在**构造模型之前**重置种子，否则各组初始权重不同、受控对照失效，
+        # 且独立进程之间结果不可复现（fit/ 与 train_classifier 里的 set_seed 都太晚）。
+        set_seed(cfg["seed"])
+        model = model_fn()
         print(f"  training {name} ...", flush=True)
         h = fit(model, X, y, Xt, yt, cfg)
         acc = float(h["final_test_acc"])
@@ -110,7 +116,8 @@ def main() -> None:
             n_features=n_q, classes=args.classes, source=args.data_source,
             data_dir=args.data_dir, seed=args.seed,
         )
-        record(label, VQCClassifier(n_q, args.classes, args.layers), X, y, Xt, yt, n_q, meta)
+        record(label, lambda q=n_q: VQCClassifier(q, args.classes, args.layers),
+               X, y, Xt, yt, n_q, meta)
 
     # ---- 振幅编码组：完整特征，不压缩 ----
     Xr, yr, Xtr_, ytr_, meta_raw = load_mnist_raw(
@@ -123,15 +130,15 @@ def main() -> None:
         Xr, Xtr_ = Xr[:, :n_raw_features], Xtr_[:, :n_raw_features]
     record(
         f"Amplitude-{args.qubits} (full {Xr.shape[1]}-d)",
-        AmplitudeVQCClassifier(args.qubits, args.classes, args.layers,
-                               n_features=int(Xr.shape[1])),
+        lambda: AmplitudeVQCClassifier(args.qubits, args.classes, args.layers,
+                                       n_features=int(Xr.shape[1])),
         Xr, yr, Xtr_, ytr_, args.qubits, meta_raw,
     )
 
     # ---- 经典参照：同样的完整输入 ----
     record(
         f"MLP-{Xr.shape[1]} (classical)",
-        MLPClassifier(int(Xr.shape[1]), args.classes, hidden=args.hidden),
+        lambda: MLPClassifier(int(Xr.shape[1]), args.classes, hidden=args.hidden),
         Xr, yr, Xtr_, ytr_, 0, meta_raw,
     )
 

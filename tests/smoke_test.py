@@ -7,10 +7,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import numpy as np
+import torch
 
 from qml_lab.data import load_mnist
 from qml_lab.models import MLPClassifier, VQCClassifier
 from qml_lab.train import train_classifier
+from qml_lab.utils import set_seed
 
 
 def _finite_all(values: object) -> bool:
@@ -47,8 +49,43 @@ def check_classifier() -> None:
         assert 0.0 <= acc <= 1.0, f"{name} final_test_acc 应落在 [0,1]，实际 {acc}"
 
 
+def check_heads_and_controls() -> None:
+    """分类头 / 输出缩放 / 轻量训练路径 / 构造前设种子的受控性。"""
+    X_train, y_train, X_test, y_test, _ = load_mnist(
+        n_train=32, n_test=16, n_features=2, classes=2,
+        source="synthetic", seed=0,
+    )
+    for head, scale in [("linear", 1.0), ("mlp", 5.0), ("mlp", "learnable")]:
+        model = VQCClassifier(2, 2, 1, head=head, scale=scale, hidden=8)
+        out = model(torch.as_tensor(X_train[:4], dtype=torch.float32))
+        assert tuple(out.shape) == (4, 2), f"{head}/{scale} logits 形状错误"
+        out.sum().backward()
+        for name, p in model.named_parameters():
+            assert p.grad is not None and bool(torch.isfinite(p.grad).all()), \
+                f"{head}/{scale} 的 {name} 梯度缺失或非有限"
+
+    model = VQCClassifier(2, 2, 1)
+    hist = train_classifier(
+        model=model, X_train=X_train, y_train=y_train,
+        X_test=X_test, y_test=y_test,
+        epochs=1, batch_size=8, lr=0.05, seed=0,
+        eval_batch_size=8, verbose=False, eval_train=False,
+    )
+    assert all(v is None for v in hist["train_acc"]), \
+        "eval_train=False 时 train_acc 应标记为未测量"
+    assert _finite_all(hist["train_loss"]) and _finite_all(hist["test_acc"])
+
+    # TorchLayer 权重在构造时消耗全局 RNG：构造前重置种子必须得到完全相同的初值
+    set_seed(0)
+    a = VQCClassifier(2, 2, 1).q.layer.weights.detach().clone()
+    set_seed(0)
+    b = VQCClassifier(2, 2, 1).q.layer.weights.detach().clone()
+    assert torch.equal(a, b), "构造前 set_seed 未能固定 TorchLayer 初始权重"
+
+
 def main() -> None:
     check_classifier()
+    check_heads_and_controls()
     print("SMOKE OK")
 
 

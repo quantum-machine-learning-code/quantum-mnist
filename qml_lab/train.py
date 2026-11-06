@@ -52,7 +52,16 @@ def evaluate_accuracy(model, X, y, batch_size: int = 64) -> float:
 
 def train_classifier(model, X_train, y_train, X_test, y_test, epochs: int = 20,
                      batch_size: int = 32, lr: float = 0.01, seed: int = 0,
-                     eval_batch_size: int = 64, verbose: bool = True) -> dict:
+                     eval_batch_size: int = 64, verbose: bool = True,
+                     eval_train: bool = True) -> dict:
+    """训练分类器。
+
+    ``eval_train=False`` 时跳过每 epoch 在**训练集**上的全量 loss / acc 前向：
+    状态向量模拟下 2^n 的前向很贵，多 seed 实验只需测试集曲线。此时
+    ``train_loss`` 改用训练时 mini-batch loss 的加权平均，``train_acc`` 记为
+    ``None``（不测量就不填数字），``test_acc`` 仍每 epoch 计算。默认 ``True``
+    与原行为完全一致，主实验脚本不受影响。
+    """
     set_seed(seed)
     Xtr, ytr = _as_float_tensor(X_train), _as_long_tensor(y_train)
     Xte, yte = _as_float_tensor(X_test), _as_long_tensor(y_test)
@@ -67,31 +76,38 @@ def train_classifier(model, X_train, y_train, X_test, y_test, epochs: int = 20,
         ep_t0 = time.perf_counter()
         model.train()
         perm = torch.randperm(n)  # 每 epoch 打乱做 mini-batch
+        running_loss, seen = 0.0, 0
         for start in range(0, n, batch_size):
             idx = perm[start:start + batch_size]
             opt.zero_grad()
             loss = loss_fn(model(Xtr[idx]), ytr[idx])
             loss.backward()
             opt.step()
+            running_loss += loss.item() * idx.numel()
+            seen += idx.numel()
 
-        # 全量训练集分批前向，按样本数加权求平均 loss
         model.eval()
-        loss_sum, cnt = 0.0, 0
-        with torch.no_grad():
-            for start in range(0, n, eval_batch_size):
-                yb = ytr[start:start + eval_batch_size]
-                l = loss_fn(model(Xtr[start:start + eval_batch_size]), yb)
-                b = yb.numel()
-                loss_sum += l.item() * b
-                cnt += b
-        train_loss = loss_sum / cnt if cnt else 0.0
+        if eval_train:
+            # 全量训练集分批前向，按样本数加权求平均 loss
+            loss_sum, cnt = 0.0, 0
+            with torch.no_grad():
+                for start in range(0, n, eval_batch_size):
+                    yb = ytr[start:start + eval_batch_size]
+                    l = loss_fn(model(Xtr[start:start + eval_batch_size]), yb)
+                    b = yb.numel()
+                    loss_sum += l.item() * b
+                    cnt += b
+            train_loss = loss_sum / cnt if cnt else 0.0
+            train_acc = evaluate_accuracy(model, Xtr, ytr, batch_size=eval_batch_size)
+            tl = _finite(train_loss, "train_loss")
+            ta = _finite(train_acc, "train_acc")
+        else:
+            tl = _finite(running_loss / seen if seen else 0.0, "train_loss")
+            ta = None  # 未测量，不填占位数字
 
-        train_acc = evaluate_accuracy(model, Xtr, ytr, batch_size=eval_batch_size)
         test_acc = evaluate_accuracy(model, Xte, yte, batch_size=eval_batch_size)
         ep_seconds = time.perf_counter() - ep_t0
 
-        tl = _finite(train_loss, "train_loss")
-        ta = _finite(train_acc, "train_acc")
         tea = _finite(test_acc, "test_acc")
         es = _finite(ep_seconds, "epoch_seconds")
         history["train_loss"].append(tl)
@@ -99,8 +115,9 @@ def train_classifier(model, X_train, y_train, X_test, y_test, epochs: int = 20,
         history["test_acc"].append(tea)
         history["epoch_seconds"].append(es)
         if verbose:
+            ta_str = "n/a   " if ta is None else f"{ta:.4f}"
             print(f"epoch {ep:>3}/{epochs} | loss {tl:.4f} | "
-                  f"train_acc {ta:.4f} | test_acc {tea:.4f} | {es:.2f}s")
+                  f"train_acc {ta_str} | test_acc {tea:.4f} | {es:.2f}s")
 
     history["final_test_acc"] = history["test_acc"][-1] if history["test_acc"] else 0.0
     history["total_seconds"] = _finite(time.perf_counter() - t0, "total_seconds")
