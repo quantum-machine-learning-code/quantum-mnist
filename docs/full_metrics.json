@@ -1,0 +1,646 @@
+{
+  "purpose": "全量 MNIST（60000 训练 / 10000 测试）上的 VQC 与等预算经典对照",
+  "config": {
+    "data_source": "idx",
+    "data_dir": "data",
+    "train_samples": 60000,
+    "monitor_samples": 1000,
+    "classes": 10,
+    "layers": 2,
+    "epochs": 3,
+    "batch_size": 128,
+    "lr": 0.01,
+    "seeds": "0,1,2",
+    "scale_points": "600,3000,12000,60000",
+    "workers": 6,
+    "torch_threads": 4,
+    "archive": "docs/full_metrics.json",
+    "fig_dir": "docs/figures",
+    "no_figures": false,
+    "quick": false
+  },
+  "data": {
+    "source": "idx",
+    "note": "真实 IDX 全量；每 epoch 用 1000 张均衡监控子集，最终准确率一律在全量 10000 张测试集评估"
+  },
+  "groups": {
+    "q165": {
+      "key": "q165",
+      "kind": "amp",
+      "obs": "z+x+y+zzall+xxall+yyall",
+      "n_train": 60000,
+      "epochs": 3,
+      "hidden": 32,
+      "label": "Amp10 / 165-dim readout / full MNIST"
+    },
+    "q40": {
+      "key": "q40",
+      "kind": "amp",
+      "obs": "z+x+y+zz",
+      "n_train": 60000,
+      "epochs": 3,
+      "hidden": 32,
+      "label": "Amp10 / 40-dim readout / full MNIST"
+    },
+    "pca165": {
+      "key": "pca165",
+      "kind": "pca",
+      "obs": "",
+      "n_train": 60000,
+      "epochs": 3,
+      "hidden": 32,
+      "label": "classical PCA-165 + same MLP head / full MNIST"
+    },
+    "mlp784": {
+      "key": "mlp784",
+      "kind": "mlp",
+      "obs": "",
+      "n_train": 60000,
+      "epochs": 3,
+      "hidden": 32,
+      "label": "classical MLP-784 / full MNIST"
+    },
+    "probe": {
+      "key": "probe",
+      "kind": "probe",
+      "obs": "z+x+y+zzall+xxall+yyall",
+      "n_train": 60000,
+      "epochs": 0,
+      "hidden": 32,
+      "label": "frozen random-unitary 165-dim readout upper bound"
+    },
+    "s600": {
+      "key": "s600",
+      "kind": "amp",
+      "obs": "z+x+y+zz",
+      "n_train": 600,
+      "epochs": 1,
+      "hidden": 32,
+      "label": "40-dim readout / 600 images / 1 epoch"
+    },
+    "s3000": {
+      "key": "s3000",
+      "kind": "amp",
+      "obs": "z+x+y+zz",
+      "n_train": 3000,
+      "epochs": 1,
+      "hidden": 32,
+      "label": "40-dim readout / 3000 images / 1 epoch"
+    },
+    "s12000": {
+      "key": "s12000",
+      "kind": "amp",
+      "obs": "z+x+y+zz",
+      "n_train": 12000,
+      "epochs": 1,
+      "hidden": 32,
+      "label": "40-dim readout / 12000 images / 1 epoch"
+    },
+    "s60000": {
+      "key": "s60000",
+      "kind": "amp",
+      "obs": "z+x+y+zz",
+      "n_train": 60000,
+      "epochs": 1,
+      "hidden": 32,
+      "label": "40-dim readout / 60000 images / 1 epoch"
+    }
+  },
+  "summary": {
+    "q40": {
+      "mean": 0.9014,
+      "std": 0.002,
+      "values": [
+        0.8996,
+        0.9012,
+        0.9035
+      ],
+      "n": 3
+    },
+    "pca165": {
+      "mean": 0.9554,
+      "std": 0.0028,
+      "values": [
+        0.9568,
+        0.9572,
+        0.9522
+      ],
+      "n": 3
+    },
+    "mlp784": {
+      "mean": 0.9546,
+      "std": 0.0012,
+      "values": [
+        0.9559,
+        0.9535,
+        0.9545
+      ],
+      "n": 3
+    },
+    "s600": {
+      "mean": 0.2609,
+      "std": 0.0656,
+      "values": [
+        0.1972,
+        0.2571,
+        0.3283
+      ],
+      "n": 3
+    },
+    "s3000": {
+      "mean": 0.5548,
+      "std": 0.0408,
+      "values": [
+        0.5303,
+        0.5321,
+        0.6019
+      ],
+      "n": 3
+    },
+    "s12000": {
+      "mean": 0.7912,
+      "std": 0.0154,
+      "values": [
+        0.7874,
+        0.778,
+        0.8081
+      ],
+      "n": 3
+    },
+    "s60000": {
+      "mean": 0.8683,
+      "std": 0.0044,
+      "values": [
+        0.8674,
+        0.8644,
+        0.873
+      ],
+      "n": 3
+    },
+    "probe": {
+      "mean": 0.944,
+      "std": 0.0,
+      "values": [
+        0.944
+      ],
+      "n": 1
+    },
+    "q165": {
+      "mean": 0.9421,
+      "std": 0.0008,
+      "values": [
+        0.9419,
+        0.943,
+        0.9415
+      ],
+      "n": 3
+    }
+  },
+  "runs": [
+    {
+      "group": "mlp784",
+      "seed": 0,
+      "final_test_acc": 0.9559,
+      "monitor_acc_curve": [
+        0.924,
+        0.939,
+        0.954
+      ],
+      "final_monitor_acc": 0.954,
+      "final_loss": 0.1575,
+      "seconds": 2.83,
+      "train_seconds": 2.8,
+      "params": 25450,
+      "readout_dim": 0,
+      "n_train": 60000,
+      "dim_in": 784,
+      "init_weight_sha256": null
+    },
+    {
+      "group": "mlp784",
+      "seed": 1,
+      "final_test_acc": 0.9535,
+      "monitor_acc_curve": [
+        0.928,
+        0.944,
+        0.952
+      ],
+      "final_monitor_acc": 0.952,
+      "final_loss": 0.157,
+      "seconds": 2.9,
+      "train_seconds": 2.87,
+      "params": 25450,
+      "readout_dim": 0,
+      "n_train": 60000,
+      "dim_in": 784,
+      "init_weight_sha256": null
+    },
+    {
+      "group": "mlp784",
+      "seed": 2,
+      "final_test_acc": 0.9545,
+      "monitor_acc_curve": [
+        0.93,
+        0.953,
+        0.952
+      ],
+      "final_monitor_acc": 0.952,
+      "final_loss": 0.1507,
+      "seconds": 2.91,
+      "train_seconds": 2.89,
+      "params": 25450,
+      "readout_dim": 0,
+      "n_train": 60000,
+      "dim_in": 784,
+      "init_weight_sha256": null
+    },
+    {
+      "group": "pca165",
+      "seed": 0,
+      "final_test_acc": 0.9568,
+      "monitor_acc_curve": [
+        0.924,
+        0.939,
+        0.954
+      ],
+      "final_monitor_acc": 0.954,
+      "final_loss": 0.1667,
+      "seconds": 2.4,
+      "train_seconds": 2.38,
+      "params": 5642,
+      "readout_dim": 0,
+      "n_train": 60000,
+      "dim_in": 165,
+      "init_weight_sha256": null
+    },
+    {
+      "group": "pca165",
+      "seed": 1,
+      "final_test_acc": 0.9572,
+      "monitor_acc_curve": [
+        0.923,
+        0.946,
+        0.955
+      ],
+      "final_monitor_acc": 0.955,
+      "final_loss": 0.1606,
+      "seconds": 2.27,
+      "train_seconds": 2.25,
+      "params": 5642,
+      "readout_dim": 0,
+      "n_train": 60000,
+      "dim_in": 165,
+      "init_weight_sha256": null
+    },
+    {
+      "group": "pca165",
+      "seed": 2,
+      "final_test_acc": 0.9522,
+      "monitor_acc_curve": [
+        0.925,
+        0.943,
+        0.948
+      ],
+      "final_monitor_acc": 0.948,
+      "final_loss": 0.1659,
+      "seconds": 2.15,
+      "train_seconds": 2.13,
+      "params": 5642,
+      "readout_dim": 0,
+      "n_train": 60000,
+      "dim_in": 165,
+      "init_weight_sha256": null
+    },
+    {
+      "group": "probe",
+      "seed": 0,
+      "final_test_acc": 0.944,
+      "probes": {
+        "logreg": 0.9027,
+        "mlp": 0.944
+      },
+      "seconds": 633.65,
+      "note": "冻结随机酉（非训练后权重）；全量 10000 张测试集"
+    },
+    {
+      "group": "q165",
+      "seed": 0,
+      "final_test_acc": 0.9415,
+      "monitor_acc_curve": [
+        0.916,
+        0.927,
+        0.932
+      ],
+      "final_monitor_acc": 0.932,
+      "final_loss": 0.1923,
+      "seconds": 2654.49,
+      "train_seconds": 2598.43,
+      "params": 5702,
+      "readout_dim": 165,
+      "n_train": 60000,
+      "dim_in": 784,
+      "init_weight_sha256": "0291f91efb6184c16a598391ad7e17dab7329730291748ed7362a0b8ceb995b4"
+    },
+    {
+      "group": "q165",
+      "seed": 1,
+      "final_test_acc": 0.9419,
+      "monitor_acc_curve": [
+        0.918,
+        0.938,
+        0.939
+      ],
+      "final_monitor_acc": 0.939,
+      "final_loss": 0.1922,
+      "seconds": 2462.36,
+      "train_seconds": 2406.34,
+      "params": 5702,
+      "readout_dim": 165,
+      "n_train": 60000,
+      "dim_in": 784,
+      "init_weight_sha256": "33befa7faeb604cbab087c0c360f32533079d3ab36f86164f08bf0f048b29181"
+    },
+    {
+      "group": "q165",
+      "seed": 2,
+      "final_test_acc": 0.943,
+      "monitor_acc_curve": [
+        0.904,
+        0.926,
+        0.929
+      ],
+      "final_monitor_acc": 0.929,
+      "final_loss": 0.1895,
+      "seconds": 2462.79,
+      "train_seconds": 2406.68,
+      "params": 5702,
+      "readout_dim": 165,
+      "n_train": 60000,
+      "dim_in": 784,
+      "init_weight_sha256": "bc7778906654d32ad564feabee01e4e4909d85aeec7a9d3a76305d2154b70115"
+    },
+    {
+      "group": "q40",
+      "seed": 0,
+      "final_test_acc": 0.9012,
+      "monitor_acc_curve": [
+        0.838,
+        0.861,
+        0.873
+      ],
+      "final_monitor_acc": 0.873,
+      "final_loss": 0.3479,
+      "seconds": 636.64,
+      "train_seconds": 621.96,
+      "params": 1702,
+      "readout_dim": 40,
+      "n_train": 60000,
+      "dim_in": 784,
+      "init_weight_sha256": "0291f91efb6184c16a598391ad7e17dab7329730291748ed7362a0b8ceb995b4"
+    },
+    {
+      "group": "q40",
+      "seed": 1,
+      "final_test_acc": 0.8996,
+      "monitor_acc_curve": [
+        0.842,
+        0.861,
+        0.882
+      ],
+      "final_monitor_acc": 0.882,
+      "final_loss": 0.3541,
+      "seconds": 633.0,
+      "train_seconds": 618.27,
+      "params": 1702,
+      "readout_dim": 40,
+      "n_train": 60000,
+      "dim_in": 784,
+      "init_weight_sha256": "33befa7faeb604cbab087c0c360f32533079d3ab36f86164f08bf0f048b29181"
+    },
+    {
+      "group": "q40",
+      "seed": 2,
+      "final_test_acc": 0.9035,
+      "monitor_acc_curve": [
+        0.838,
+        0.871,
+        0.883
+      ],
+      "final_monitor_acc": 0.883,
+      "final_loss": 0.3258,
+      "seconds": 636.9,
+      "train_seconds": 622.39,
+      "params": 1702,
+      "readout_dim": 40,
+      "n_train": 60000,
+      "dim_in": 784,
+      "init_weight_sha256": "bc7778906654d32ad564feabee01e4e4909d85aeec7a9d3a76305d2154b70115"
+    },
+    {
+      "group": "s12000",
+      "seed": 0,
+      "final_test_acc": 0.7874,
+      "monitor_acc_curve": [
+        0.742
+      ],
+      "final_monitor_acc": 0.742,
+      "final_loss": 1.1771,
+      "seconds": 57.83,
+      "train_seconds": 42.72,
+      "params": 1702,
+      "readout_dim": 40,
+      "n_train": 12000,
+      "dim_in": 784,
+      "init_weight_sha256": "0291f91efb6184c16a598391ad7e17dab7329730291748ed7362a0b8ceb995b4"
+    },
+    {
+      "group": "s12000",
+      "seed": 1,
+      "final_test_acc": 0.778,
+      "monitor_acc_curve": [
+        0.73
+      ],
+      "final_monitor_acc": 0.73,
+      "final_loss": 1.2353,
+      "seconds": 58.84,
+      "train_seconds": 44.14,
+      "params": 1702,
+      "readout_dim": 40,
+      "n_train": 12000,
+      "dim_in": 784,
+      "init_weight_sha256": "33befa7faeb604cbab087c0c360f32533079d3ab36f86164f08bf0f048b29181"
+    },
+    {
+      "group": "s12000",
+      "seed": 2,
+      "final_test_acc": 0.8081,
+      "monitor_acc_curve": [
+        0.763
+      ],
+      "final_monitor_acc": 0.763,
+      "final_loss": 1.134,
+      "seconds": 56.0,
+      "train_seconds": 40.95,
+      "params": 1702,
+      "readout_dim": 40,
+      "n_train": 12000,
+      "dim_in": 784,
+      "init_weight_sha256": "bc7778906654d32ad564feabee01e4e4909d85aeec7a9d3a76305d2154b70115"
+    },
+    {
+      "group": "s3000",
+      "seed": 0,
+      "final_test_acc": 0.5303,
+      "monitor_acc_curve": [
+        0.486
+      ],
+      "final_monitor_acc": 0.486,
+      "final_loss": 1.9872,
+      "seconds": 26.09,
+      "train_seconds": 11.36,
+      "params": 1702,
+      "readout_dim": 40,
+      "n_train": 3000,
+      "dim_in": 784,
+      "init_weight_sha256": "0291f91efb6184c16a598391ad7e17dab7329730291748ed7362a0b8ceb995b4"
+    },
+    {
+      "group": "s3000",
+      "seed": 1,
+      "final_test_acc": 0.5321,
+      "monitor_acc_curve": [
+        0.485
+      ],
+      "final_monitor_acc": 0.485,
+      "final_loss": 2.0239,
+      "seconds": 25.55,
+      "train_seconds": 11.19,
+      "params": 1702,
+      "readout_dim": 40,
+      "n_train": 3000,
+      "dim_in": 784,
+      "init_weight_sha256": "33befa7faeb604cbab087c0c360f32533079d3ab36f86164f08bf0f048b29181"
+    },
+    {
+      "group": "s3000",
+      "seed": 2,
+      "final_test_acc": 0.6019,
+      "monitor_acc_curve": [
+        0.538
+      ],
+      "final_monitor_acc": 0.538,
+      "final_loss": 2.034,
+      "seconds": 25.87,
+      "train_seconds": 11.32,
+      "params": 1702,
+      "readout_dim": 40,
+      "n_train": 3000,
+      "dim_in": 784,
+      "init_weight_sha256": "bc7778906654d32ad564feabee01e4e4909d85aeec7a9d3a76305d2154b70115"
+    },
+    {
+      "group": "s600",
+      "seed": 0,
+      "final_test_acc": 0.2571,
+      "monitor_acc_curve": [
+        0.234
+      ],
+      "final_monitor_acc": 0.234,
+      "final_loss": 2.2875,
+      "seconds": 18.98,
+      "train_seconds": 3.77,
+      "params": 1702,
+      "readout_dim": 40,
+      "n_train": 600,
+      "dim_in": 784,
+      "init_weight_sha256": "0291f91efb6184c16a598391ad7e17dab7329730291748ed7362a0b8ceb995b4"
+    },
+    {
+      "group": "s600",
+      "seed": 1,
+      "final_test_acc": 0.1972,
+      "monitor_acc_curve": [
+        0.196
+      ],
+      "final_monitor_acc": 0.196,
+      "final_loss": 2.2871,
+      "seconds": 18.79,
+      "train_seconds": 3.82,
+      "params": 1702,
+      "readout_dim": 40,
+      "n_train": 600,
+      "dim_in": 784,
+      "init_weight_sha256": "33befa7faeb604cbab087c0c360f32533079d3ab36f86164f08bf0f048b29181"
+    },
+    {
+      "group": "s600",
+      "seed": 2,
+      "final_test_acc": 0.3283,
+      "monitor_acc_curve": [
+        0.328
+      ],
+      "final_monitor_acc": 0.328,
+      "final_loss": 2.2868,
+      "seconds": 18.1,
+      "train_seconds": 3.36,
+      "params": 1702,
+      "readout_dim": 40,
+      "n_train": 600,
+      "dim_in": 784,
+      "init_weight_sha256": "bc7778906654d32ad564feabee01e4e4909d85aeec7a9d3a76305d2154b70115"
+    },
+    {
+      "group": "s60000",
+      "seed": 0,
+      "final_test_acc": 0.8674,
+      "monitor_acc_curve": [
+        0.838
+      ],
+      "final_monitor_acc": 0.838,
+      "final_loss": 0.6466,
+      "seconds": 213.62,
+      "train_seconds": 198.56,
+      "params": 1702,
+      "readout_dim": 40,
+      "n_train": 60000,
+      "dim_in": 784,
+      "init_weight_sha256": "0291f91efb6184c16a598391ad7e17dab7329730291748ed7362a0b8ceb995b4"
+    },
+    {
+      "group": "s60000",
+      "seed": 1,
+      "final_test_acc": 0.8644,
+      "monitor_acc_curve": [
+        0.842
+      ],
+      "final_monitor_acc": 0.842,
+      "final_loss": 0.6952,
+      "seconds": 216.11,
+      "train_seconds": 201.18,
+      "params": 1702,
+      "readout_dim": 40,
+      "n_train": 60000,
+      "dim_in": 784,
+      "init_weight_sha256": "33befa7faeb604cbab087c0c360f32533079d3ab36f86164f08bf0f048b29181"
+    },
+    {
+      "group": "s60000",
+      "seed": 2,
+      "final_test_acc": 0.873,
+      "monitor_acc_curve": [
+        0.838
+      ],
+      "final_monitor_acc": 0.838,
+      "final_loss": 0.6213,
+      "seconds": 192.49,
+      "train_seconds": 179.35,
+      "params": 1702,
+      "readout_dim": 40,
+      "n_train": 60000,
+      "dim_in": 784,
+      "init_weight_sha256": "bc7778906654d32ad564feabee01e4e4909d85aeec7a9d3a76305d2154b70115"
+    }
+  ],
+  "wall_seconds": 2669.16,
+  "caveat": "n=3 seed，未做多重比较校正；监控子集与全量测试集数值会有差异，以 final_test_acc 为准；probe 是冻结随机酉的可分性上界，不是端到端结果；全量用 default.qubit + backprop（lightning 不支持该线路 backprop，adjoint 实测慢 8 倍）；真机上振幅编码 O(2^n) 状态制备与 165 个观测量的 shots 成本不在此模拟结果内。"
+}
