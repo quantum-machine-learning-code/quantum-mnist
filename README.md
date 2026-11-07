@@ -12,6 +12,8 @@
 
 ## 快速结论（2026-11-07，含全量 MNIST 与第八轮架构突破）
 
+> **⚠ 2026-11-07 外部审查（[REVIEW.md 第 15 节](docs/REVIEW.md)，[`audit_round8.py`](experiments/audit_round8.py)）**：第八轮数字本身可复现，但三处结论需要收紧 —— ① `qkernel_amp` 0.9210 与**不加 `StandardScaler` 的经典二次核逐 seed 完全相同**（它就是经典可算的核，0.9310 的局部核同理），不应与端到端量子模型混读；② 把 `PatchVQC` 的 8-qubit 线路换成经典 `Linear(196,32)+Tanh`、其余全不变后为 **0.8920 ± 0.0067**（配对 +1.20 pt，CI 跨 0，快约 50 倍），说明 0.8800 主要来自经典局部窗口归纳偏置，**量子层无可证实正贡献**；③ 20 个配对检验经 Bonferroni 校正后由 13/20 变为 **2/20** 显著。此外核方法组与 VQC 组的「5 seed」含义不同（重抽样 vs 初始化），不可跨组配对。原始复算见 [`docs/audit_metrics.json`](docs/audit_metrics.json)。
+
 下面**小样本结果表**用真实 MNIST IDX、10 类、200 张固定测试集、**5 个 seed**，报告均值 ± 标准差。Python 3.13 / PennyLane 0.45.1 / torch 2.15 CPU。原始数据归档在 [`docs/multiseed_metrics.json`](docs/multiseed_metrics.json)、[`docs/ceiling_metrics.json`](docs/ceiling_metrics.json)、[`docs/readout_metrics.json`](docs/readout_metrics.json)、[`docs/info_metrics.json`](docs/info_metrics.json)、[`docs/push_metrics.json`](docs/push_metrics.json)、[`docs/budget_metrics.json`](docs/budget_metrics.json)、[`docs/why_low_metrics.json`](docs/why_low_metrics.json)、[`docs/full_metrics.json`](docs/full_metrics.json) 与 [`docs/open_issues_metrics.json`](docs/open_issues_metrics.json)，复现命令见[快速开始](#快速开始)。
 
 > **口径**：第一~四轮及第八轮用 600/200 的直接均衡抽样；第五轮为了让「数据规模」组可比，改成从 3000 张训练池按类取嵌套子集、测试集固定。跨轮绝对数值不逐位可比（同配置的 40 维基线 0.7720 → 0.7690），**组内配对统计有效**。**第七轮全量实验用全量 10000 张测试集，与小样本表 200 张测试集的数字不可逐位比较。**
@@ -100,6 +102,7 @@ quantum-mnist/
 ├── experiments/why_low_acc.py      # **六轮归因**：归一化损失 / 二次型天花板 / 平移敏感度
 ├── experiments/train_full_mnist.py # **七轮全量**：60000 训练 / 10000 测试，量子 + 等预算经典 + 冻结探针
 ├── experiments/resolve_open_issues.py # **八轮突破**：混合稳定化 / Pérez-Salinas 重上传 / QSVC 量子核 / 局部 PatchVQC
+├── experiments/audit_round8.py      # **八轮外部审查**：QSVC 恒等性 / PatchVQC 量子层消融 / Bonferroni 复核
 ├── tests/smoke_test.py          # 离线冒烟测试（不联网、不下载 MNIST，含 pytest 入口）
 ├── docs/DEV_NOTES.md            # 本机环境与离线数据准备备注
 ├── docs/REVIEW.md               # 方法学审查：问题清单、实测证据、参考实现对照
@@ -112,6 +115,7 @@ quantum-mnist/
 ├── docs/why_low_metrics.json    # 归档：六轮归因（双口径探针 / 二次型上限 / 平移几何）
 ├── docs/full_metrics.json       # 归档：七轮全量（25 任务 × 3 seed，全量测试集）
 ├── docs/open_issues_metrics.json # 归档：八轮四大开放问题（16 组 VQC/NN + 6 组核方法 × 5 seed + 配对 CI）
+├── docs/audit_metrics.json       # 归档：八轮外部审查（QSVC 恒等性 / 量子层消融 / 多重比较校正）
 ├── docs/figures/                # 实测对比图（multiseed_* / ceiling_* / readout_* / push_* / why_low.png / full_mnist.png / mnist_open_issues.png）
 ├── data/                        # 本地数据缓存（gitignore）
 └── results/                     # 运行产物（gitignore）
@@ -148,6 +152,15 @@ Windows 下把 `.venv/bin/python` 换成 `.venv\Scripts\python.exe`、路径改�
 ```
 
 产物：`docs/open_issues_metrics.json`（16 组神经网络/VQC × 5 seed + 6 组量子/经典核 SVM × 5 seed + 20 项配对 95% CI）与 `docs/figures/mnist_open_issues.png`。支持 `--quick` 离线极小自检（写入 `results/quick_*`，不覆盖 `docs/`）。
+
+**第八轮外部审查**（约 20 s，纯经典 + sklearn，不训练量子模型）：
+
+```bash
+.venv/bin/python experiments/audit_round8.py --data-source idx \
+    --archive docs/audit_metrics.json
+```
+
+产物 `docs/audit_metrics.json`：QSVC 与经典二次核的逐 seed 恒等性、`PatchVQC` 量子层消融的逐 seed 配对 CI、20 项配对检验的 Bonferroni 复核。结论见 [REVIEW.md 第 15 节](docs/REVIEW.md)。
 
 **第七轮（全量 MNIST：60000 训练 / 10000 测试）**用下面一条重跑（6 worker 并行、纯 CPU **约 45 分钟**；最贵的 `q165` 单 seed 41–44 分钟）：
 
@@ -564,6 +577,7 @@ Windows 下把 `.venv/bin/python` 换成 `.venv\Scripts\python.exe`、路径改�
 | `docs/figures/full_mnist.png` | 全量量子 vs 经典柱状图（带数值标注与误差棒）/ 600 → 60000 张规模曲线 |
 | `docs/open_issues_metrics.json` | **归档的八轮突破原始数据**：混合架构稳定化、Pérez-Salinas 可训练重上传、QSVC 量子核基线、局部 `PatchVQC` 共 16 组 VQC/NN + 6 组核方法 × 5 seed 与 20 项配对 CI |
 | `docs/figures/mnist_open_issues.png` | 八轮四大开放问题 5-seed 四联对比柱状图（带误差棒与均值标注） |
+| `docs/audit_metrics.json` | **归档的八轮外部审查**：QSVC 与经典二次核逐 seed 恒等性、5 种预处理口径、`PatchVQC` 量子层消融 5 seed 逐 seed 配对、20 项配对检验的 Bonferroni 复核 |
 | `results/mnist_metrics.json` | 历史主实验：准确率、参数量、耗时、配置与 `meta`（含数据源标注） |
 | `results/mnist_accuracy.png` | 量子 vs 经典的测试准确率曲线 |
 | `results/mnist_params.png` / `mnist_time.png` | 参数量 / 耗时对比柱状图 |

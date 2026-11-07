@@ -1,0 +1,270 @@
+{
+  "purpose": "第八轮外部审查：QSVC 恒等性 / PatchVQC 量子层消融 / 多重比较复核",
+  "config": {
+    "data_source": "idx",
+    "seeds": "0,1,2,3,4",
+    "epochs": 24,
+    "train_samples": 600,
+    "test_samples": 200,
+    "classes": 10
+  },
+  "quick": false,
+  "A_kernel_recheck": {
+    "qkernel_amp": {
+      "mean": 0.921,
+      "std": 0.0074,
+      "values": [
+        0.92,
+        0.93,
+        0.92,
+        0.91,
+        0.925
+      ]
+    },
+    "plain_poly2_c0": {
+      "mean": 0.921,
+      "std": 0.0074,
+      "values": [
+        0.92,
+        0.93,
+        0.92,
+        0.91,
+        0.925
+      ]
+    },
+    "plain_poly2_c1": {
+      "mean": 0.912,
+      "std": 0.0115,
+      "values": [
+        0.915,
+        0.93,
+        0.905,
+        0.9,
+        0.91
+      ]
+    },
+    "scaled_poly2_c0": {
+      "mean": 0.889,
+      "std": 0.0124,
+      "values": [
+        0.885,
+        0.91,
+        0.88,
+        0.88,
+        0.89
+      ]
+    },
+    "scaled_poly2_c1": {
+      "mean": 0.898,
+      "std": 0.0225,
+      "values": [
+        0.88,
+        0.92,
+        0.88,
+        0.885,
+        0.925
+      ]
+    },
+    "qkernel_amp_equals_plain_poly2_c0": true
+  },
+  "B_patch_ablation": {
+    "runs": [
+      {
+        "seed": 0,
+        "acc": 0.885,
+        "loss": 0.002,
+        "params": 26620,
+        "seconds": 6.19
+      },
+      {
+        "seed": 1,
+        "acc": 0.9,
+        "loss": 0.0029,
+        "params": 26620,
+        "seconds": 2.27
+      },
+      {
+        "seed": 2,
+        "acc": 0.895,
+        "loss": 0.0063,
+        "params": 26620,
+        "seconds": 2.27
+      },
+      {
+        "seed": 3,
+        "acc": 0.895,
+        "loss": 0.0037,
+        "params": 26620,
+        "seconds": 2.24
+      },
+      {
+        "seed": 4,
+        "acc": 0.885,
+        "loss": 0.0033,
+        "params": 26620,
+        "seconds": 2.32
+      }
+    ],
+    "mean": 0.892,
+    "std": 0.0067,
+    "paired_with_patch_vqc": {
+      "patch_vqc_per_seed": [
+        0.885,
+        0.875,
+        0.88,
+        0.895,
+        0.865
+      ],
+      "ablation_per_seed": [
+        0.885,
+        0.9,
+        0.895,
+        0.895,
+        0.885
+      ],
+      "diff_pt_linear_minus_quantum": [
+        0.0,
+        2.5,
+        1.5,
+        0.0,
+        2.0
+      ],
+      "mean_pt": 1.2,
+      "std_pt": 1.151,
+      "ci95_pt": [
+        -0.229,
+        2.629
+      ]
+    }
+  },
+  "C_multiplicity": {
+    "n_tests": 20,
+    "t_threshold_naive": 2.776,
+    "t_threshold_bonferroni": 6.758,
+    "naive_significant": 13,
+    "bonferroni_significant": 2,
+    "per_test": {
+      "A_hyb_stab_minus_legacy": {
+        "mean_pt": 16.7,
+        "t": 3.193,
+        "naive_significant": true,
+        "bonferroni_significant": false
+      },
+      "A_hyb_stab_minus_qlr": {
+        "mean_pt": 18.9,
+        "t": 5.206,
+        "naive_significant": true,
+        "bonferroni_significant": false
+      },
+      "A_hyb_stab_minus_nq_light": {
+        "mean_pt": 2.1,
+        "t": 0.477,
+        "naive_significant": false,
+        "bonferroni_significant": false
+      },
+      "A_cnn_light_minus_hyb_stab": {
+        "mean_pt": 9.4,
+        "t": 3.325,
+        "naive_significant": true,
+        "bonferroni_significant": false
+      },
+      "B_naive_reup_minus_a10_z": {
+        "mean_pt": -11.0,
+        "t": 3.042,
+        "naive_significant": true,
+        "bonferroni_significant": false
+      },
+      "B_perez_z_minus_naive_reup": {
+        "mean_pt": 13.6,
+        "t": 4.104,
+        "naive_significant": true,
+        "bonferroni_significant": false
+      },
+      "B_perez_z_minus_a10_z": {
+        "mean_pt": 2.6,
+        "t": 0.942,
+        "naive_significant": false,
+        "bonferroni_significant": false
+      },
+      "B_perez_full_minus_a10_z": {
+        "mean_pt": 11.5,
+        "t": 5.534,
+        "naive_significant": true,
+        "bonferroni_significant": false
+      },
+      "C_qkernel_amp_minus_svm_poly2": {
+        "mean_pt": 2.3,
+        "t": 2.876,
+        "naive_significant": true,
+        "bonferroni_significant": false
+      },
+      "C_qkernel_amp_minus_svm_rbf": {
+        "mean_pt": 5.6,
+        "t": 7.853,
+        "naive_significant": true,
+        "bonferroni_significant": true
+      },
+      "C_qkernel_patch_minus_qkernel_amp": {
+        "mean_pt": 1.0,
+        "t": 1.381,
+        "naive_significant": false,
+        "bonferroni_significant": false
+      },
+      "C_qkernel_patch_minus_svm_rbf": {
+        "mean_pt": 6.6,
+        "t": 5.327,
+        "naive_significant": true,
+        "bonferroni_significant": false
+      },
+      "C_qkernel_angle_minus_svm_rbf_pca10": {
+        "mean_pt": -0.0,
+        "t": 0.0,
+        "naive_significant": false,
+        "bonferroni_significant": false
+      },
+      "D_b165_minus_b40": {
+        "mean_pt": 7.6,
+        "t": 10.933,
+        "naive_significant": true,
+        "bonferroni_significant": true
+      },
+      "D_b165_norm_minus_b165": {
+        "mean_pt": 0.1,
+        "t": 0.152,
+        "naive_significant": false,
+        "bonferroni_significant": false
+      },
+      "D_patch_vqc_minus_b165": {
+        "mean_pt": 3.2,
+        "t": 3.54,
+        "naive_significant": true,
+        "bonferroni_significant": false
+      },
+      "D_patch_vqc_minus_patch_4quad": {
+        "mean_pt": 3.5,
+        "t": 3.738,
+        "naive_significant": true,
+        "bonferroni_significant": false
+      },
+      "D_patch_vqc_minus_ref_pca165": {
+        "mean_pt": 3.9,
+        "t": 5.108,
+        "naive_significant": true,
+        "bonferroni_significant": false
+      },
+      "D_patch_vqc_minus_ref_mlp784": {
+        "mean_pt": 1.6,
+        "t": 2.136,
+        "naive_significant": false,
+        "bonferroni_significant": false
+      },
+      "D_patch_vqc_minus_cnn_light": {
+        "mean_pt": 2.1,
+        "t": 1.039,
+        "naive_significant": false,
+        "bonferroni_significant": false
+      }
+    }
+  },
+  "wall_seconds": 21.14
+}
