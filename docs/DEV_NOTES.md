@@ -9,7 +9,7 @@
 | Python | 3.13（Windows 侧） |
 | PennyLane | 0.45.1 |
 | torch / torchvision | 2.15.0 / 0.29.2（CPU 版） |
-| numpy / scikit-learn | 2.5.4 / 1.x |
+| numpy / scipy / scikit-learn | 2.x / 1.18.1 / 1.9.1 |
 | 模拟器 | `default.qubit`，解析 `backprop`，无真机 |
 
 ## 1. pip 源问题
@@ -64,7 +64,9 @@ git --git-dir="$R/.git" --work-tree="$R" status
 python -m venv .venv
 # 按第 1 节换源安装 requirements.txt
 .venv/Scripts/python.exe tests/smoke_test.py                       # 或 .venv/bin/python
+.venv/Scripts/python.exe -m pytest tests/smoke_test.py
 .venv/Scripts/python.exe experiments/train_mnist.py --quick
+.venv/Scripts/python.exe experiments/resolve_open_issues.py --quick
 .venv/Scripts/python.exe experiments/train_mnist.py --data-source idx --seed 0
 ```
 

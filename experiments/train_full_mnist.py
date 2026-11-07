@@ -41,7 +41,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from qml_lab.data import _fetch_raw  # noqa: E402
+from qml_lab.data import fetch_mnist_raw, l2_normalize, stratified_subset  # noqa: E402
 from qml_lab.models import MLPClassifier, RichVQCClassifier  # noqa: E402
 from qml_lab.quantum import n_readout  # noqa: E402
 from qml_lab.train import evaluate_accuracy, train_classifier  # noqa: E402
@@ -86,10 +86,7 @@ def build_groups(args) -> dict[str, Group]:
 
 
 def l2(X: np.ndarray) -> np.ndarray:
-    A = np.asarray(X, dtype=np.float32)
-    n = np.linalg.norm(A, axis=1, keepdims=True)
-    n[n < 1e-12] = 1.0
-    return np.ascontiguousarray(A / n, dtype=np.float32)
+    return l2_normalize(X)
 
 
 def get_data(args) -> dict:
@@ -109,7 +106,7 @@ def get_data(args) -> dict:
         Xr, yr, Xe, ye = X, y, Xt, yt
         source = "synthetic"
     else:
-        Xr, yr, Xe, ye = _fetch_raw(args.data_source, data_dir)
+        Xr, yr, Xe, ye = fetch_mnist_raw(data_dir, source=args.data_source, seed=0)
         source = args.data_source
     Xr, Xe = l2(Xr), l2(Xe)
 
@@ -120,9 +117,15 @@ def get_data(args) -> dict:
         pos = np.flatnonzero(np.asarray(ye) == c)[:k]
         idx.append(pos)
     mon = np.concatenate(idx)
+    if args.train_samples < len(Xr):
+        X_sub, y_sub = stratified_subset(Xr, yr, args.train_samples,
+                                         classes=args.classes, seed=0)
+    else:
+        X_sub = np.ascontiguousarray(Xr[:args.train_samples])
+        y_sub = np.ascontiguousarray(np.asarray(yr)[:args.train_samples])
     d = {
-        "X": np.ascontiguousarray(Xr[:args.train_samples]),
-        "y": np.ascontiguousarray(np.asarray(yr)[:args.train_samples]),
+        "X": X_sub,
+        "y": y_sub,
         "Xtest_full": Xe, "ytest_full": ye,
         "Xmon": np.ascontiguousarray(Xe[mon]),
         "ymon": np.ascontiguousarray(np.asarray(ye)[mon]),
@@ -145,10 +148,12 @@ def build_model(g: Group, dim_in: int, seed: int, args):
 
 
 def run_probe(g: Group, d: dict, args) -> dict:
-    """随机酉下 165 维读出，全量特征上的冻结可分性上界。"""
+    """随机酉下 165 维读出，全量特征上的冻结可分性上界（统一 StandardScaler 口径）。"""
     import torch
     from sklearn.linear_model import LogisticRegression
     from sklearn.neural_network import MLPClassifier as SkMLP
+    from sklearn.pipeline import make_pipeline
+    from sklearn.preprocessing import StandardScaler
     from qml_lab.quantum import make_rich_layer
 
     torch.set_num_threads(max(1, args.torch_threads))
@@ -167,14 +172,14 @@ def run_probe(g: Group, d: dict, args) -> dict:
     Ftr, Fte = feat(d["X"]), feat(d["Xtest_full"])
     out = {}
     for name, clf in [
-        ("logreg", LogisticRegression(max_iter=1000, C=1.0)),
-        ("mlp", SkMLP(hidden_layer_sizes=(64, 32), max_iter=300, random_state=0)),
+        ("logreg", make_pipeline(StandardScaler(), LogisticRegression(max_iter=1000, C=1.0))),
+        ("mlp", make_pipeline(StandardScaler(), SkMLP(hidden_layer_sizes=(64, 32), max_iter=300, random_state=0))),
     ]:
         clf.fit(Ftr, d["y"])
         out[name] = round(float(np.mean(clf.predict(Fte) == d["ytest_full"])), 4)
     return {"group": "probe", "seed": 0, "final_test_acc": max(out.values()),
             "probes": out, "seconds": round(time.perf_counter() - t0, 2),
-            "note": "冻结随机酉（非训练后权重）；全量 10000 张测试集"}
+            "note": "冻结随机酉（非训练后权重，StandardScaler 统一口径）；全量 10000 张测试集"}
 
 
 def run_task(task: tuple) -> dict:
@@ -189,8 +194,11 @@ def run_task(task: tuple) -> dict:
         return run_probe(g, d, args)
 
     n = min(g.n_train, len(d["X"]))
-    Xtr = np.ascontiguousarray(d["X"][:n])
-    ytr = np.ascontiguousarray(d["y"][:n])
+    if n < len(d["X"]):
+        Xtr, ytr = stratified_subset(d["X"], d["y"], n, classes=args.classes, seed=0)
+    else:
+        Xtr = np.ascontiguousarray(d["X"][:n])
+        ytr = np.ascontiguousarray(d["y"][:n])
     Xmon, ymon = d["Xmon"], d["ymon"]
     dim_in = int(Xtr.reshape(len(Xtr), -1).shape[1])
     if g.kind == "pca":
@@ -253,7 +261,7 @@ def summarize(runs: list[dict]) -> dict:
     return out
 
 
-def make_figure(result: dict, fig_dir: str) -> int:
+def make_figure(result: dict, fig_dir: str, fig_name: str = "full_mnist.png") -> int:
     """从归档结果画图；可用 --redraw-from 单独调用，不必重跑 40 分钟实验。"""
     import matplotlib
     matplotlib.use("Agg")
@@ -296,9 +304,9 @@ def make_figure(result: dict, fig_dir: str) -> int:
     if not fd.is_absolute():
         fd = ROOT / fd
     fd.mkdir(parents=True, exist_ok=True)
-    fig.savefig(fd / "full_mnist.png", dpi=130)
+    fig.savefig(fd / fig_name, dpi=130)
     plt.close(fig)
-    print(f"figure -> {fd / 'full_mnist.png'}", flush=True)
+    print(f"figure -> {fd / fig_name}", flush=True)
     return 0
 
 
@@ -337,8 +345,11 @@ def main() -> int:
         args.train_samples, args.monitor_samples, args.classes = 120, 40, 4
         args.epochs, args.batch_size = 1, 32
         args.seeds, args.scale_points, args.workers = "0", "60", 1
-        args.torch_threads, args.archive, args.fig_dir = 1, "", "results"
-        args.no_figures = True
+        args.torch_threads = 1
+        if args.archive == "docs/full_metrics.json":
+            args.archive = "results/quick_full_metrics.json"
+        if args.fig_dir == "docs/figures":
+            args.fig_dir = "results"
 
     t0 = time.time()
     gs = build_groups(args)
@@ -406,9 +417,10 @@ def main() -> int:
                        encoding="utf-8")
         print(f"archived -> {out.relative_to(ROOT)}", flush=True)
 
-    if not args.no_figures and not args.quick:
+    if not args.no_figures:
         try:
-            make_figure(result, args.fig_dir)
+            fname = "quick_mnist_full.png" if args.quick else "full_mnist.png"
+            make_figure(result, args.fig_dir, fig_name=fname)
         except Exception as e:
             print(f"[warn] figure failed: {e}", flush=True)
 

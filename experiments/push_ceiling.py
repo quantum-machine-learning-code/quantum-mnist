@@ -505,14 +505,15 @@ def main() -> None:
         "caveat": ("5 seed 均值 ± 标准差，配对 95% CI 用 t 分布、未做多重比较校正；"
                    "数据组固定总样本呈现次数 14400（1800x8）以隔离数据多样性，"
                    "与 600x24 组的 epoch 数不同；PCA 参照在各自训练集上 fit；"
-                   "165 个观测量在真机上需分组测量、shots 成本近似线性上升；"
+                   "165 个观测量（z+x+y+zzall+xxall+yyall）在真机上按 QWC 对易分组只需 3 个测量基"
+                   "（Z、X、Y），并非线性增加测量组数，但每个测量基需从有限 shots 中同时估计 55 个观测量；"
                    "振幅编码在真机上需 O(2^n) 状态制备。"),
     }
     if args.quick:
         payload["caveat"] = "QUICK 自检，合成数据，不得用于任何结论。" + payload["caveat"]
 
     out_dir = ensure_dir(ROOT / args.out)
-    p = out_dir / "push_metrics.json"
+    p = out_dir / ("quick_push_metrics.json" if args.quick else "push_metrics.json")
     p.write_text(json.dumps(payload, indent=2, ensure_ascii=False, default=float),
                  encoding="utf-8")
     print(f"\nsaved: {p}", flush=True)

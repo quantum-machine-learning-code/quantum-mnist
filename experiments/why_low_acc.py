@@ -131,7 +131,10 @@ def main() -> int:
         args.pool_train, args.train_samples, args.test_samples = 80, 40, 20
         args.classes = 4
         args.scaling_points = "40,80"
-        args.archive, args.fig_dir = "", "results"
+        if args.archive == "docs/why_low_metrics.json":
+            args.archive = "results/quick_why_low_metrics.json"
+        if args.fig_dir == "docs/figures":
+            args.fig_dir = "results"
         args.no_figures = True
 
     t0 = time.time()

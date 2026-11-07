@@ -2,6 +2,7 @@
 pennylane>=0.40,<0.50
 torch>=2.4
 scikit-learn>=1.4
+scipy>=1.11
 numpy>=1.26
 matplotlib>=3.8
 tqdm>=4.66

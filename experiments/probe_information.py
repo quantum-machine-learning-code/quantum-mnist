@@ -77,6 +77,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--big-train", type=int, default=12000,
                    help="像素探针的数据规模扫描上限")
     p.add_argument("--no-classical", action="store_true", help="跳过同维度 PCA 参照")
+    p.add_argument("--quick", action="store_true", help="离线极小自检，不覆盖 docs/ 正式归档")
     return p.parse_args()
 
 
@@ -256,11 +257,28 @@ def pixel_scaling(args, Xt: np.ndarray, yt: np.ndarray) -> dict:
 
 def main() -> None:
     args = parse_args()
+    nq = NQ
+    c_dims = CLASSICAL_DIMS
+    if args.quick:
+        args.seeds = "0"
+        args.epochs = 2
+        args.train_samples, args.test_samples, args.big_train = 40, 20, 60
+        args.classes = 4
+        args.data_source = "synthetic"
+        args.out = "results"
+        if args.archive == "docs/info_metrics.json":
+            args.archive = "results/quick_info_metrics.json"
+        nq = 4
+        c_dims = [4, 8, 16]
     seed = int(args.seeds.split(",")[0])
     kw = dict(classes=args.classes, source=args.data_source,
               data_dir=args.data_dir, seed=0)
     Xtr, ytr, Xte, yte, meta = load_mnist_raw(
         n_train=args.train_samples, n_test=args.test_samples, **kw)
+    if args.quick:
+        from qml_lab.data import l2_normalize
+        k = 2 ** nq
+        Xtr, Xte = l2_normalize(Xtr[:, :k]), l2_normalize(Xte[:, :k])
     d = {"X": Xtr, "y": ytr, "Xt": Xte, "yt": yte}
 
     print("=== 1. 像素探针（固定 600/200 测试集） ===", flush=True)
@@ -270,12 +288,22 @@ def main() -> None:
           f"mlp {pixel['mlp']:.4f}", flush=True)
 
     print("=== 2. 数据规模扫描（同一固定测试集） ===", flush=True)
-    scaling = pixel_scaling(args, Xte, yte)
+    if args.quick:
+        from qml_lab.data import l2_normalize
+        Xbig, ybig, _, _, smeta = load_mnist_raw(
+            n_train=args.big_train, n_test=args.test_samples, **kw)
+        Xbig = l2_normalize(Xbig[:, :2 ** nq])
+        scaling = {
+            "source": smeta["source"], "test_fixed": True,
+            "points": {str(len(Xbig)): fit_probes(Xbig, ybig, Xte, yte, full=False)},
+        }
+    else:
+        scaling = pixel_scaling(args, Xte, yte)
 
     print("=== 3. 训练 40 维读出模型，记录梯度 / 漂移 ===", flush=True)
     set_seed(seed)
     model = RichVQCClassifier(
-        NQ, args.classes, N_LAYERS, encoding="amplitude",
+        nq, args.classes, N_LAYERS, encoding="amplitude",
         observables=TRAIN_OBS, n_features=int(Xtr.shape[1]),
         head="mlp", scale=5.0, hidden=args.hidden)
     random_w = model.q.layer.weights.detach().clone()
@@ -290,10 +318,10 @@ def main() -> None:
     print("=== 4. 各读出宽度 × 三种权重的冻结探针 ===", flush=True)
     readout = {}
     for spec in SPECS:
-        dim = n_readout(NQ, spec)
+        dim = n_readout(nq, spec)
         set_seed(0)
         layer = make_rich_layer(
-            n_qubits=NQ, n_layers=N_LAYERS, encoding="amplitude",
+            n_qubits=nq, n_layers=N_LAYERS, encoding="amplitude",
             observables=spec, n_features=int(Xtr.shape[1]))
         rec = {"spec": spec, "dim": dim, "states": {}}
         for state in WEIGHT_STATES:
@@ -314,7 +342,7 @@ def main() -> None:
 
     print("=== 5. 同维度 PCA 经典参照 ===", flush=True)
     classical = {} if args.no_classical else classical_reference(
-        args, CLASSICAL_DIMS, (Xte, yte))
+        args, c_dims, (Xte, yte))
 
     payload = {
         "config": {k: v for k, v in vars(args).items()},
@@ -334,11 +362,15 @@ def main() -> None:
         },
         "caveat": ("除 40 维训练组外均为单 seed 示意性诊断；结论性数字见 "
                    "push_ceiling.py 的 5 seed 正式对照。探针为冻结特征 + 经典分类器"
-                   "的可分性上界；poly 核在 165 维上可能过拟合；更多观测量在真机上"
-                   "需要更多测量分组与 shots。"),
+                   "的可分性上界；poly 核在 165 维上可能过拟合；165 个观测量"
+                   "（z+x+y+zzall+xxall+yyall）在真机上按 QWC 对易分组只需 3 个测量基"
+                   "（Z、X、Y），并非线性增加测量组数，但每个测量基需从有限 shots 中"
+                   "同时估计 55 个观测量。"),
     }
+    if args.quick:
+        payload["caveat"] = "QUICK 自检，合成数据，不得用于任何结论。" + payload["caveat"]
     out_dir = ensure_dir(ROOT / args.out)
-    p = out_dir / "info_metrics.json"
+    p = out_dir / ("quick_info_metrics.json" if args.quick else "info_metrics.json")
     p.write_text(json.dumps(payload, indent=2, ensure_ascii=False, default=float),
                  encoding="utf-8")
     print(f"\nsaved: {p}", flush=True)

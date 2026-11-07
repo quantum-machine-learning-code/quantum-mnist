@@ -2,25 +2,32 @@
 """可微分的量子变分线路层（PennyLane + PyTorch）。"""
 from __future__ import annotations
 
+import math
+
 import pennylane as qml
 import torch
 from torch import nn
 
 
-def n_quantum_params(n_qubits: int, n_layers: int) -> int:
-    """StronglyEntanglingLayers 每个量子比特、每层有 3 个旋转角。"""
-    return n_layers * n_qubits * 3
+def n_quantum_params(n_qubits: int, n_layers: int, trainable_reupload: bool = False) -> int:
+    """StronglyEntanglingLayers 每个量子比特、每层有 3 个旋转角；可训练重上传另加每层 2n 个输入缩放与偏置。"""
+    base = n_layers * n_qubits * 3
+    return base + (2 * n_layers * n_qubits if trainable_reupload else 0)
 
 
 class _Float32VQC(nn.Module):
     """薄封装：统一输入/输出为 float32；cast 是可微算子，不破坏梯度图。"""
 
-    def __init__(self, layer: nn.Module):
+    def __init__(self, layer: nn.Module, bound_inputs: bool = False):
         super().__init__()
         self.layer = layer  # 注册为子模块，参数可被 model.parameters() 收集
+        self.bound_inputs = bound_inputs
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = x.to(torch.float32)
+        if self.bound_inputs:
+            # 将任意实数输入平滑压缩到 [-pi/2, pi/2] 的单调区间，避免周期旋转相位混叠
+            x = torch.tanh(x / (math.pi / 2.0)) * (math.pi / 2.0)
         out = self.layer(x)
         out = out.to(torch.float32)  # TorchLayer 常返回 float64
         # 少数 PennyLane 版本广播时返回 (n_qubits, B)，纠正为契约要求的 (B, n_qubits)
@@ -139,7 +146,7 @@ def make_observables(n_qubits: int, spec: str):
     整体是输入的二次型，扩充观测量等于扩充可访问的二次统计量集合。
 
     ``default.qubit`` 在解析模式下允许互不対易的可观测量同时测量；
-    有限 shots 时 PennyLane 会自动按对易组拆分（更多观测量 = 更多 shots）。
+    有限 shots 时 PennyLane 会自动按 QWC 对易组拆分（例如 165 维规格只需 Z/X/Y 3 个测量基）。
 
     规格按固定顺序展开，与 ``+`` 里的书写顺序无关；旧规格 ``"z"`` /
     ``"z+x+y+zz"`` 的展开顺序保持不变，以保证回归测试逐位一致。
@@ -181,11 +188,13 @@ def make_rich_layer(
     encoding: str = "amplitude",
     observables: str = "z",
     n_features: int = 784,
-    reupload: bool = False,
+    reupload: bool | str = False,
+    trainable_reupload: bool = False,
+    init_std: float | None = None,
     diff_method: str = "backprop",
     shots: int | None = None,
 ) -> nn.Module:
-    """通用可变量子线路层：可配置编码、读出与数据重上传。
+    """通用可变量子线路层：可配置编码、读出与数据重上传（含 Pérez-Salinas 可训练重上传）。
 
     参数
     ----
@@ -193,22 +202,21 @@ def make_rich_layer(
         要求 ``2**n_qubits >= n_features``）；``"angle"`` 用
         ``AngleEmbedding(RY)``（输入维度必须等于 ``n_qubits``）。
     observables : 传给 :func:`make_observables` 的规格，例如 ``"z+x"``。
-    reupload : 若为 True，**每一层**都重新 ``AngleEmbedding`` 一次输入，
-        再接该层的 ``StronglyEntanglingLayers`` 切片。这是 Pérez-Salinas
-        et al. data re-uploading 的最小实现：权重 shape 仍是
-        ``(n_layers, n_qubits, 3)``，参数量与普通线路完全相同，但输入频谱
-        从 degree-1 提升到 degree-n_layers。AmplitudeEmbedding 会重置量子态，
-        不适用，故两者组合会直接报错。
-
-    返回层的输出 shape 为 ``(B, n_readout(n_qubits, observables))``。
-    权重 shape 与 ``make_vqc_layer`` / ``make_amplitude_layer`` 一致，因此在
-    同一个 ``set_seed`` 之后构造的不同读出规格，量子初始权重逐元素相同 ——
-    这是 ``experiments/break_readout.py`` 做严格受控对照的前提。
+    reupload : 若为 ``True``，每层原样重嵌入输入（朴素重上传，与第四轮归档逐位兼容）；
+        若为 ``"trainable"``（或 ``trainable_reupload=True``），启用 Pérez-Salinas et al.
+        (2019) 可训练数据重上传：对有界输入 ``tanh(x/(pi/2))*(pi/2)`` 在每层施加可学习输入缩放
+        ``omega_{l,i} ~ N(1.0, 0.1^2)`` 与旋转偏置 ``theta_{l,i} ~ N(0, 0.05^2)``。
+    init_std : 若指定（如 ``0.05``），将变分旋转权重初始化为 ``N(0, init_std^2)`` 近恒等初值。
     """
+    is_trainable_reup = bool(trainable_reupload) or (
+        isinstance(reupload, str) and reupload.strip().lower() == "trainable"
+    )
+    is_naive_reup = bool(reupload) and not is_trainable_reup
+
     if encoding not in ("amplitude", "angle"):
         raise ValueError(f"未知编码 {encoding!r}，可选 'amplitude' / 'angle'")
     if encoding == "amplitude":
-        if reupload:
+        if is_naive_reup or is_trainable_reup:
             raise ValueError("AmplitudeEmbedding 会重置量子态，不支持数据重上传")
         if 2 ** n_qubits < n_features:
             raise ValueError(
@@ -230,18 +238,34 @@ def make_rich_layer(
         else:
             qml.AngleEmbedding(inputs, wires=range(n_qubits), rotation="Y")
 
-    def circuit(inputs, weights):
-        if reupload:
+    if is_trainable_reup:
+        def circuit(inputs, weights, in_scale, in_shift):
             for layer_i in range(n_layers):
-                _embed(inputs)
+                angles = inputs * in_scale[layer_i] + in_shift[layer_i]
+                qml.AngleEmbedding(angles, wires=range(n_qubits), rotation="Y")
                 qml.StronglyEntanglingLayers(weights[layer_i:layer_i + 1],
                                              wires=range(n_qubits))
-        else:
-            _embed(inputs)
-            qml.StronglyEntanglingLayers(weights, wires=range(n_qubits))
-        return [qml.expval(op) for op in ops]
+            return [qml.expval(op) for op in ops]
 
-    weight_shapes = {"weights": (n_layers, n_qubits, 3)}
+        weight_shapes = {
+            "weights": (n_layers, n_qubits, 3),
+            "in_scale": (n_layers, n_qubits),
+            "in_shift": (n_layers, n_qubits),
+        }
+    else:
+        def circuit(inputs, weights):
+            if is_naive_reup:
+                for layer_i in range(n_layers):
+                    _embed(inputs)
+                    qml.StronglyEntanglingLayers(weights[layer_i:layer_i + 1],
+                                                 wires=range(n_qubits))
+            else:
+                _embed(inputs)
+                qml.StronglyEntanglingLayers(weights, wires=range(n_qubits))
+            return [qml.expval(op) for op in ops]
+
+        weight_shapes = {"weights": (n_layers, n_qubits, 3)}
+
     try:
         qnode = qml.qnode(dev, diff_method=diff_method)(circuit)
         layer = qml.qnn.TorchLayer(qnode, weight_shapes)
@@ -250,4 +274,13 @@ def make_rich_layer(
         layer = qml.qnn.TorchLayer(qnode, weight_shapes)
 
     layer = layer.to(torch.float32)
-    return _Float32VQC(layer)
+    with torch.no_grad():
+        if is_trainable_reup:
+            std_w = 0.05 if init_std is None else float(init_std)
+            nn.init.normal_(layer.weights, mean=0.0, std=std_w)
+            nn.init.normal_(layer.in_scale, mean=1.0, std=0.1)
+            nn.init.normal_(layer.in_shift, mean=0.0, std=0.05)
+        elif init_std is not None:
+            nn.init.normal_(layer.weights, mean=0.0, std=float(init_std))
+
+    return _Float32VQC(layer, bound_inputs=is_trainable_reup)

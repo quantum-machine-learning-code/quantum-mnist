@@ -10,7 +10,14 @@ from pathlib import Path
 
 import numpy as np
 
-__all__ = ["load_mnist", "load_mnist_raw", "load_mnist_images"]
+__all__ = [
+    "load_mnist",
+    "load_mnist_raw",
+    "load_mnist_images",
+    "fetch_mnist_raw",
+    "l2_normalize",
+    "stratified_subset",
+]
 
 # 数据源别名，方便其它模块用不同名字指定
 _SOURCE_ALIASES = {
@@ -20,6 +27,7 @@ _SOURCE_ALIASES = {
     "openml": "openml", "sklearn": "openml", "fetch_openml": "openml",
     "synthetic": "synthetic", "synth": "synthetic", "fake": "synthetic",
 }
+
 
 def _normalize_source(source) -> str:
     return _SOURCE_ALIASES.get(str(source).strip().lower(), "auto")
@@ -36,6 +44,14 @@ def _to_labels(y) -> np.ndarray:
     if a.dtype.kind in "iu":
         return a.astype(np.int64)
     return a.astype(str).astype(np.int64)
+
+
+def l2_normalize(X: np.ndarray) -> np.ndarray:
+    """逐样本 L2 归一化为 float32 连续数组（零范数样本保持不变）。"""
+    A = np.asarray(X, dtype=np.float32)
+    norms = np.linalg.norm(A, axis=1, keepdims=True)
+    norms[norms < 1e-12] = 1.0
+    return np.ascontiguousarray(A / norms, dtype=np.float32)
 
 
 def _read_idx_images(path) -> np.ndarray:
@@ -92,15 +108,81 @@ def _fetch_raw(src: str, data_dir) -> tuple:
     )
 
 
+def fetch_mnist_raw(data_dir="data", source: str = "mnist", seed: int = 0) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """公开的原始 MNIST 读取接口，返回 ``(Xtr, ytr, Xte, yte)``。
+
+    支持 ``fetch_mnist_raw(data_dir, source="idx")``；若调用方按旧私有接口习惯传入
+    ``fetch_mnist_raw(source, data_dir)``，也会自动识别参数顺序。
+    """
+    if (str(data_dir).strip().lower() in _SOURCE_ALIASES
+            and str(source).strip().lower() not in _SOURCE_ALIASES):
+        data_dir, source = source, data_dir
+    src = _normalize_source(source)
+    if src == "synthetic":
+        counts_tr = _split_counts(600, 10)
+        counts_te = _split_counts(200, 10)
+        return _make_synthetic(counts_tr, counts_te, 784, 10, seed)
+    root = Path(data_dir)
+    if src == "torchvision" and (root / "MNIST" / "raw" / "train-images-idx3-ubyte").exists():
+        # 当默认 source="mnist" 且本地已有离线 IDX 时，优先走离线 IDX
+        chain = ["idx", "torchvision", "openml"]
+    elif src == "auto":
+        chain = ["idx", "torchvision", "openml"]
+    else:
+        chain = [src]
+    last_err = None
+    for candidate in chain:
+        try:
+            return _fetch_raw(candidate, data_dir)
+        except Exception as e:
+            last_err = e
+    raise RuntimeError(f"无法从 {chain} 读取原始 MNIST: {last_err}") from last_err
+
+
 def _select(X, y, counts, class_ids, rng) -> tuple[np.ndarray, np.ndarray]:
-    """按类均衡抽样，并把原始类别标签重映射为连续的 0..C-1。"""
-    Xs, ys = [], []
+    """按类均衡抽样，并把原始类别标签重映射为连续的 0..C-1。
+
+    当请求总样本数 ``n <= 可用样本总数`` 时，严格无放回抽样（``replace=False``）：
+    先为每类分配 ``min(cnt, pool.size)``，若仍有缺口（例如真实 MNIST 数字 5 只有
+    5421 张 < 6000），再把剩余配额无放回地分摊给尚有富余样本的类别，避免小类重复、
+    大类丢样。仅当请求总数超过所有请求类别的可用样本总和时才启用有放回抽样。
+    """
     X = np.asarray(X)
-    for new_lab, (orig, cnt) in enumerate(zip(class_ids, counts)):
+    y = np.asarray(y)
+    pools = []
+    for orig in class_ids:
         pool = np.flatnonzero(y == orig)
         if pool.size == 0:
             # 指定类别不存在时从全集取样兜底，避免抛异常
             pool = np.arange(len(y))
+        pools.append(pool)
+
+    req = [int(c) for c in counts]
+    avail = [p.size for p in pools]
+    total_req = sum(req)
+    total_avail = sum(avail)
+
+    if all(a >= c for a, c in zip(avail, req)):
+        alloc = req
+    elif total_req <= total_avail:
+        alloc = [min(c, a) for c, a in zip(req, avail)]
+        rem = total_req - sum(alloc)
+        while rem > 0:
+            elig = [i for i in range(len(alloc)) if avail[i] > alloc[i]]
+            if not elig:
+                break
+            step = max(1, rem // len(elig))
+            for i in elig:
+                if rem <= 0:
+                    break
+                add = min(step, avail[i] - alloc[i], rem)
+                alloc[i] += add
+                rem -= add
+    else:
+        alloc = req
+
+    Xs, ys = [], []
+    for new_lab, (pool, cnt) in enumerate(zip(pools, alloc)):
         take = rng.choice(pool, size=cnt, replace=pool.size < cnt)
         Xs.append(X[take])
         ys.append(np.full(cnt, new_lab, dtype=np.int64))
@@ -108,6 +190,19 @@ def _select(X, y, counts, class_ids, rng) -> tuple[np.ndarray, np.ndarray]:
         np.concatenate(Xs, axis=0).astype(np.float32),
         np.concatenate(ys).astype(np.int64),
     )
+
+
+def stratified_subset(X, y, n: int, classes=10, seed: int = 0) -> tuple[np.ndarray, np.ndarray]:
+    """从 ``(X, y)`` 中按类分层均衡无放回抽样 ``n`` 个样本（固定 ``seed``）。"""
+    if isinstance(classes, (int, np.integer)):
+        class_ids = list(range(int(classes)))
+    else:
+        class_ids = [int(c) for c in classes]
+    if not class_ids:
+        class_ids = [0]
+    counts = _split_counts(int(n), len(class_ids))
+    rng = np.random.default_rng(seed)
+    return _select(X, _to_labels(y), counts, class_ids, rng)
 
 
 def _apply_pca(Xtr, Xte, n_features, seed) -> tuple[np.ndarray, np.ndarray]:
@@ -331,13 +426,7 @@ def load_mnist_raw(n_train=600, n_test=200, classes=10,
         # 离线兜底：784 维可分高斯数据，只用于流程自检
         Xtr, ytr, Xte, yte = _make_synthetic(counts_tr, counts_te, 784, C, seed)
 
-    def _l2(X) -> np.ndarray:
-        A = np.asarray(X, dtype=np.float32)
-        norms = np.linalg.norm(A, axis=1, keepdims=True)
-        norms[norms < 1e-12] = 1.0
-        return np.ascontiguousarray(A / norms, dtype=np.float32)
-
-    Xtr, Xte = _l2(Xtr), _l2(Xte)
+    Xtr, Xte = l2_normalize(Xtr), l2_normalize(Xte)
     ytr = np.ascontiguousarray(ytr, dtype=np.int64)
     yte = np.ascontiguousarray(yte, dtype=np.int64)
 
@@ -357,5 +446,3 @@ def load_mnist_raw(n_train=600, n_test=200, classes=10,
         "fallback_reasons": reasons,
     }
     return Xtr, ytr, Xte, yte, meta
-
-

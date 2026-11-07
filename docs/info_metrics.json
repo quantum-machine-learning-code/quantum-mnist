@@ -436,5 +436,5 @@
     "grad_norm_first_epoch": 0.048492,
     "grad_norm_last_epoch": 0.897241
   },
-  "caveat": "除 40 维训练组外均为单 seed 示意性诊断；结论性数字见 push_ceiling.py 的 5 seed 正式对照。探针为冻结特征 + 经典分类器的可分性上界；poly 核在 165 维上可能过拟合；更多观测量在真机上需要更多测量分组与 shots。"
+  "caveat": "除 40 维训练组外均为单 seed 示意性诊断；结论性数字见 push_ceiling.py 的 5 seed 正式对照。探针为冻结特征 + 经典分类器的可分性上界；poly 核在 165 维上可能过拟合；165 个观测量（z+x+y+zzall+xxall+yyall）在真机上按 QWC 对易分组只需 3 个测量基（Z、X、Y），并非线性增加测量组数，但每个测量基需从有限 shots 中同时估计 55 个观测量。"
 }

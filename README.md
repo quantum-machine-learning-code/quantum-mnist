@@ -10,11 +10,11 @@
 
 本仓库只做一件事：量子机器学习版本的 MNIST 分类。姊妹仓库 [quantum-llm](https://github.com/quantum-machine-learning-code/quantum-llm) 做玩具级量子增强语言模型，两者代码各自自包含，可独立 clone 与运行。
 
-## 快速结论（2026-11-06，含全量 MNIST 实跑）
+## 快速结论（2026-11-07，含全量 MNIST 与第八轮架构突破）
 
-下面**小样本结果表**用真实 MNIST IDX、10 类、200 张固定测试集、**5 个 seed**，报告均值 ± 标准差。Python 3.13 / PennyLane 0.45.1 / torch 2.15 CPU。原始数据归档在 [`docs/multiseed_metrics.json`](docs/multiseed_metrics.json)、[`docs/ceiling_metrics.json`](docs/ceiling_metrics.json)、[`docs/readout_metrics.json`](docs/readout_metrics.json)、[`docs/info_metrics.json`](docs/info_metrics.json)、[`docs/push_metrics.json`](docs/push_metrics.json)、[`docs/budget_metrics.json`](docs/budget_metrics.json)、[`docs/why_low_metrics.json`](docs/why_low_metrics.json) 与 [`docs/full_metrics.json`](docs/full_metrics.json)，复现命令见[快速开始](#快速开始)。
+下面**小样本结果表**用真实 MNIST IDX、10 类、200 张固定测试集、**5 个 seed**，报告均值 ± 标准差。Python 3.13 / PennyLane 0.45.1 / torch 2.15 CPU。原始数据归档在 [`docs/multiseed_metrics.json`](docs/multiseed_metrics.json)、[`docs/ceiling_metrics.json`](docs/ceiling_metrics.json)、[`docs/readout_metrics.json`](docs/readout_metrics.json)、[`docs/info_metrics.json`](docs/info_metrics.json)、[`docs/push_metrics.json`](docs/push_metrics.json)、[`docs/budget_metrics.json`](docs/budget_metrics.json)、[`docs/why_low_metrics.json`](docs/why_low_metrics.json)、[`docs/full_metrics.json`](docs/full_metrics.json) 与 [`docs/open_issues_metrics.json`](docs/open_issues_metrics.json)，复现命令见[快速开始](#快速开始)。
 
-> **口径**：第一~四轮用 600/200 的直接抽样；第五轮为了让「数据规模」组可比，改成从 3000 张训练池按类取嵌套子集、测试集固定。跨轮绝对数值不逐位可比（同配置的 40 维基线 0.7720 → 0.7690），**组内配对统计有效**。**第七轮全量实验用全量 10000 张测试集，与小样本表 200 张测试集的数字不可逐位比较。**
+> **口径**：第一~四轮及第八轮用 600/200 的直接均衡抽样；第五轮为了让「数据规模」组可比，改成从 3000 张训练池按类取嵌套子集、测试集固定。跨轮绝对数值不逐位可比（同配置的 40 维基线 0.7720 → 0.7690），**组内配对统计有效**。**第七轮全量实验用全量 10000 张测试集，与小样本表 200 张测试集的数字不可逐位比较。**
 
 **全量 MNIST（第七轮，2026-11-06）**：60000 张训练 / **全量 10000 张测试**、10 类、3 epochs、batch 128、3 seed，`default.qubit + backprop`。
 
@@ -30,7 +30,7 @@
 - **量子已接近自身读出的可分性**：冻结随机酉的 165 维读出用 sklearn MLP 探针可分到 **0.9440**，端到端训练反而略低（0.9421）；40 → 165 维只 +4.07 pt，3 epochs 的监控曲线已趋平。剩余差距更像**二次型函数类 / 缺少局部归纳偏置**，而不是数据或训练预算不足。该探针与端到端分类头不同，**不是严格上界**。
 - **工程代价**：25 个任务（多数组 3 seed）共 **wall 2669 s ≈ 44.5 分钟**（6 worker 并行）；最贵的 `q165` 单 seed 41–44 分钟，`q40` 约 10.6 分钟，等预算经典 2–3 s（约 **1000 倍**）。`lightning.qubit` 实测不支持该线路 `backprop`、`adjoint` 仅 11.9 samples/s（`default.qubit` 98.8），故未使用。详见[全量一节](#全量-mnist60000-张训练--全量-10000-张测试2026-11-06)与 [REVIEW.md 第 13 节](docs/REVIEW.md)。
 
-**小样本对照（第一~五轮，200 张测试集，5 seed）**：
+**小样本对照（第一~五轮与第八轮，200 张测试集，5 seed）**：
 
 | 模型 | 训练图 | 参数量 | 测试准确率（5 seed） | 单 seed 耗时 |
 | --- | --- | --- | --- | --- |
@@ -40,29 +40,38 @@
 | 五轮：Amp10 + 75 维读出（全部 ZZ 两体） | 600 | 2822 | 0.8250 ± 0.0127 | 155 s |
 | **五轮：Amp10 + 165 维读出（ZZ+XX+YY）** | 600 | 5702 | **0.8450 ± 0.0100** | 556 s |
 | **五轮：165 维 + 1800 张图 / 8 epochs** | 1800 | 5702 | **0.8660 ± 0.0185** | 530 s |
+| **八轮：局部 PatchVQC（8q 共享，3×3 重叠 14×14 窗口）** | 600 | 20364（量子 48） | **0.8800 ± 0.0112** | **117 s** |
+| **八轮：解析量子核 QSVC（10q 全局振幅 / 8q 局部 9-Patch）** | 600 | — | **0.9210 ± 0.0074 / 0.9310 ± 0.0164** | 0.01 s |
+| 八轮：纯串行稳定化混合 `lightCNN + 8q VQC`（无旁路） | 600 | 5162 | 0.7650 ± 0.0464 | 116 s |
+| 八轮：Angle-10 + Pérez-Salinas 可训练重上传（Z / 40 维） | 600 | 782 / 1742 | 0.6580 ± 0.0246 / 0.7470 ± 0.0214 | 115 / 207 s |
 | 经典 MLP-784（600 张，同批次） | 600 | 25450 | 0.8580 ± 0.0130 | 0.8 s |
 | 经典 PCA-165 + 同结构头（600 张） | 600 | 5642 | 0.8440 ± 0.0089 | 0.7 s |
 | **经典 PCA-165 + 同结构头（1800 张，等数据 ≈ 等参数）** | 1800 | 5642 | **0.9030 ± 0.0097** | 0.7 s |
 
+- **第八轮闭合四大遗留开放问题（`resolve_open_issues.py`）**：
+  1. **引入 2D 局部归纳偏置打破全局二次型瓶颈**：`PatchVQCClassifier` 将 28×28 图像切为 3×3=9 个重叠 14×14 窗口（`stride=7`），全部通过**同一个权重共享的 8-qubit 振幅编码线路**（仅 48 个量子参数），在 600 张图上达到 **0.8800 ± 0.0112** —— 比同批次全局 10-qubit 165 维模型（0.8480）高 **+3.20 ± 2.02 pt**（95% CI [+0.69, +5.71]，显著），比 2×2 无重叠象限（0.8450）高 **+3.50 ± 2.09 pt**（CI [+0.90, +6.10]，显著），比同批次 `PCA-165 + MLP`（0.8410）高 **+3.90 ± 1.71 pt**（CI [+1.78, +6.02]，显著），甚至超过 1800 张图的全局量子模型（0.8660），且因 8-qubit 态向量小 4 倍、只测 32 维期望，模拟速度反而**快 5.7 倍**（117 s vs 665 s）。
+  2. **彻底解决混合 CNN+VQC 训练崩溃（纯串行无旁路）**：定位出轻量 CNN 自适应池化后跨样本特征标准差仅 ~0.003、被全连接层随机偏置（~0.15）淹没而退化为常值角度，叠加 `[0,2π]` 均匀初始化导致单 seed 坍缩至 0.10。`HybridRichClassifier(..., stabilize=True)` 采用 `BatchNorm1d → Linear(bias=False) → BatchNorm1d → Tanh*(π/2) → 8q VQC(N(0,0.1²), 32d) → BatchNorm1d` 纯串行结构（**无任何跨量子层残差旁路**），将准确率从 0.5980 ± 0.1062（单独 lr 组 0.5760）提升至 **0.7650 ± 0.0464**（**+16.70 pt / +18.90 pt**，0/5 坍缩），与跳过量子层的同瓶颈前端 `nq_light`（0.7440 ± 0.0651）统计持平。
+  3. **Pérez-Salinas 可训练数据重上传扭转 −11 pt 退化**：在 `Angle-10` 上引入有界输入 $\tanh(x/(\pi/2))\cdot(\pi/2)$ 与逐层可学习缩放+偏置 $\text{RY}(\omega_{l,i}\tilde{x}_i + \theta_{l,i})$，仅 Z 读出即从朴素重上传的 0.5220 回升至 **0.6580 ± 0.0246**（配对 **+13.60 ± 7.41 pt**，CI [+4.40, +22.80]，5/5 为正），配合 40 维读出达 **0.7470 ± 0.0214**（比单次编码高 **+11.50 ± 4.65 pt**）。
+  4. **补齐解析量子核（QSVC）第三条基线**：600 张图 5 seed 下，10-qubit 全局振幅量子核 $K(x,x')=(\hat{x}^\top\hat{x}')^2$ 达 **0.9210 ± 0.0074**，8-qubit 局部 9-Patch 振幅量子核达 **0.9310 ± 0.0164**，10-qubit 角度编码核达 **0.8520 ± 0.0254**（与同输入 `RBF-SVM` 0.8520 完全打平）。详见[第八轮一节](#第八轮闭合四大开放问题--混合稳定化--pérez-salinas-重上传--qsvc-核基线--局部-patchvqc2026-11-07)与 [REVIEW.md 第 14 节](docs/REVIEW.md)。
 - **第五轮把 0.7690 推到 0.8450，再配合更多数据到 0.8660**：40 → 165 维读出配对 **+7.60 ± 2.38 pt**（CI [+4.64, +10.56]，5/5 seed 为正）；再加 1800 张真图为 **+2.10 ± 2.48 pt**（CI [−0.99, +5.19] 跨 0，不显著）。量子电路参数始终是 60 个，新增的只有观测量与分类头第一层。
 - **诊断结论：不是量子层训不动，而是读得太少、看得太少**。165 维读出在**完全不训练**的随机酉下冻结上界已有 0.860；训练 24 epochs 后量子权重只移动 6.9%，梯度范数反而从 0.048 涨到 0.897（排除 barren plateau），上界也只到 0.890。40 维模型 train loss 已降到 0.167 而 test acc 0.775，是**过拟合**，继续加 epoch 没有空间。详见下方「第五轮：信息上界诊断」一节与 [REVIEW.md 第 10 节](docs/REVIEW.md)。
 - **首次与同批次经典基线统计打平**：165 维量子模型 0.8450 对经典 MLP-784 0.8580 / PCA-165 0.8440 / 轻量 CNN 0.8550，三组配对差值 CI 全部跨 0；但**等数据 + 近似等参数预算**的 `PCA-165 + 同结构头（1800 张）` 是 **0.9030 ± 0.0097**，仍领先最佳量子组 3.7 pt，且单 seed 耗时相差两个数量级（约 530 s vs 0.7 s）。**不宣称量子优势**。
 - **两个负结果**：分类头 hidden 32 → 128 只 +0.20 pt（不显著）；±1px 平移增强反而 −4.40 pt —— 振幅编码没有平移不变性，增强样本与测试分布不匹配。详见 [REVIEW.md 第 11 节](docs/REVIEW.md)。
-- **六轮归因：0.866 为什么仍「相对低」**：统一探针口径后，600 张图上 165 维量子读出的可分性 **0.875** 已与「全部 307720 个齐次二次单项式」**0.880**、原始像素 RBF 0.860 打平 —— 这一档里继续加观测量空间很小，限制来自二次型函数类、小样本与缺少局部归纳偏置；1px 平移在态空间内积 0.673，经二次型读出后变化量却是类内离散度的 **1.20 倍**。振幅编码归一化丢掉的 `‖x‖` 单独可分到 0.215（chance 0.10），但整体探针只差 ±2 pt，**不是主要瓶颈**。详见下方归因节与 [REVIEW.md 第 12 节](docs/REVIEW.md)。
+- **六轮归因：0.866 为什么仍「相对低」**：统一探针口径后，600 张图上 165 维量子读出的可分性 **0.875** 已与「全部 307720 个齐次二次单项式」**0.880**、原始像素 RBF 0.860 打平 —— 这一档里继续加观测量空间很小，限制来自二次型函数类、小样本与缺少局部归纳偏置；1px 平移在态空间内积 0.673，经二次型读出后变化量却是类内离散度的 **1.20 倍**。振幅编码归一化丢掉的 `‖x‖` 单独可分到 0.215（chance 0.10），但整体探针只差 ±2 pt，**不是主要瓶颈**（第八轮端到端把 `‖x‖` 拼回 165 维读出实测仅 +0.10 ± 1.47 pt）。详见下方归因节与 [REVIEW.md 第 12 节](docs/REVIEW.md)。
 - 第二轮量子模型相对原基线 **+23.20 ± 5.40 个百分点**（95% CI [+16.49, +29.91]，5 个 seed 全部为正），是输入表示、分类头、输出缩放、训练预算与量子参数量的**联合效果**；四轮把 40 维读出相对 0.6640 基线配对 **+10.80 ± 1.35 pt**，冻结探针从 0.679 升到 0.811，证明多出来的观测量真的带信息。
 - 旧的「振幅编码比角度编码好 +15.5 pt」**已证伪**：严格受控（同 10 qubits / 同 170 参数 / 同分类头 / 初始权重逐元素相同）下，5 seed 配对差值 **−0.10 ± 8.68 pt**，95% CI [−10.88, +10.68] 跨 0，逐 seed 符号相反。
 - **0.664 不是该领域的水平，也不是抄来的数字**：外部参考实现里，同样「小样本 10 类」的 quanvolution 对照报 0.6667 / 0.7000（50 张训练图），而带经典预训练前端 / 多局部读出的混合模型在 MNIST 10 类上报 91–99%，0/1 二分类普遍 95–99%。本仓库是**无预训练前端、单次编码**的纯端到端 VQC，即使扩到 165 维读出、把训练图加到 1800 张，也仍低于参考实现的最好结果。完整对照与可比性说明见 [REVIEW.md 第 7 节](docs/REVIEW.md)。
-- **66% 的原因已实测定位并大部分解开**：冻结量子层后，10 维 `PauliZ` 读出的可分性上限只有 0.679（原始像素 0.855）；训练 / 数据预算翻倍只值 +1.3 / +4.0 pt，而加宽读出累计值 +18.4 pt（四轮 +10.8、五轮 +7.6）、换经典 CNN 特征前端到 0.863–0.934。见下方三节。
+- **66% 的原因已实测定位并大部分解开**：冻结量子层后，10 维 `PauliZ` 读出的可分性上限只有 0.679（原始像素 0.855）；训练 / 数据预算翻倍只值 +1.3 / +4.0 pt，而加宽读出累计值 +18.4 pt（四轮 +10.8、五轮 +7.6）、局部窗口共享 8-qubit `PatchVQC` 到 **0.8800**、换经典 CNN 特征前端到 0.863–0.934。见下方各节。
 
-> **⚠ 方法学审查（2026-11-06）**：本仓库最初未对照任何参考实现，且 `train_amplitude.py` 有种子 bug（模型构造早于 `set_seed`），使早期单次运行的结论不可用。现已修复，并用 `train_multiseed.py` / `diagnose_ceiling.py` / `break_readout.py` 分别重跑三轮 5 seed 实验；下文[历史结果](#历史结果单次运行仅存档)只作存档，不用于下结论。完整问题清单、实测证据与参考链接见 [docs/REVIEW.md](docs/REVIEW.md)。
+> **⚠ 方法学审查（2026-11-06 / 2026-11-07）**：本仓库最初未对照任何参考实现，且 `train_amplitude.py` 有种子 bug（模型构造早于 `set_seed`），使早期单次运行的结论不可用。现已修复，并用 `train_multiseed.py` / `diagnose_ceiling.py` / `break_readout.py` / `push_ceiling.py` / `train_full_mnist.py` / `resolve_open_issues.py` 完成八轮受控实验；下文[历史结果](#历史结果单次运行仅存档)只作存档，不用于下结论。完整问题清单、实测证据与参考链接见 [docs/REVIEW.md](docs/REVIEW.md)。
 
 ## 能做什么，不能做什么
 
 - **默认配置是模拟预算，不是物理限制**：`default.qubit` 状态维度 2ⁿ。本机实测单 batch 前向+反向：4/8/12/16 qubits 约 0.06–1.2 s，20 qubits 就要 **63 s**。默认 `qubits=4` 只是为了让笔记本几分钟跑完一个 epoch。`--qubits` 与 `--layers` 都能往上调，量子参数量为 `layers × qubits × 3`（4 qubits × 2 层 = 24 只是这一个配置的数字，不存在「最多 24 个」的限制）。
 - **压到 4 维是编码方式造成的，不是量子机器学习的要求**：`AngleEmbedding` 用一个 qubit 装一个旋转角，所以特征维必须等于 qubits 数。换成 `AmplitudeEmbedding`，n 个 qubits 的态空间可容纳 2ⁿ 个振幅 —— **10 个 qubits（1024 ≥ 784）就能无损装下完整图像，完全不用 PCA**。可跑对照见 [`experiments/train_amplitude.py`](experiments/train_amplitude.py)；`experiments/scan_capacity.py` 则把「输入维度」与「电路深度」两个因素分开扫。
 - **但放大不是免费的**：qubits 与层数增加会放大 barren plateau（随机初始化下梯度方差随 n 指数衰减）、状态制备成本与 2ⁿ 模拟内存。而且**纠缠越强，经典模拟越难** —— 张量网络只在低纠缠时高效。所以「假设有很多强关联 qubits」恰恰是量子优势最可能出现、也最无法在笔记本上验证的区域。
-- **读出端比 qubits 数更值得先动**：早期只测 n 个 `PauliZ` 期望，实测是硬信息瓶颈（冻结读出的可分性上限仅 0.679，原始像素 0.855）。`qml_lab/quantum.py` 现在支持单比特、相邻两体与**全部两体关联**（`zzall` / `xxall` / `yyall`）与数据重上传；10 → 40 维让 5 seed 准确率 0.6640 → 0.7720，再扩到 165 维到 **0.8450**（冻结上界 0.890），量子电路参数始终是 60 个。详见 [break_readout.py](experiments/break_readout.py) 与 [push_ceiling.py](experiments/push_ceiling.py)。
-- **不宣称量子优势**：第五轮已把对照收紧到**近似等参数预算**（量子 5702 vs 经典 `PCA-165 + 同结构头` 5642）与**等数据预算**（同为 1800 张图 / 8 epochs）：经典 0.9030 > 量子最佳 0.8660；在同一批 600 张图上，165 维量子模型与三条经典基线的配对 CI 全部跨 0（统计打平，不是超越）。**第七轮全量**（60000 / 10000、3 epochs、3 seed）把差距收窄到 **0.9554 vs 0.9421 = 1.33 pt**（配对 CI 不跨 0，经典仍显著领先且快约 1000 倍）。仍缺量子核第三条基线，`n=5` / `n=3` 都未做多重比较校正。
+- **读出端与空间局部性比堆全局 qubits 更值得先动**：早期只测 n 个 `PauliZ` 期望，实测是硬信息瓶颈（冻结读出的可分性上限仅 0.679，原始像素 0.855）。`qml_lab/quantum.py` 支持单比特、相邻两体、**全部两体关联**（`zzall` / `xxall` / `yyall`）与 Pérez-Salinas **可训练数据重上传**；`qml_lab/models.py` 的 `PatchVQCClassifier` 支持 3×3 重叠 14×14 局部窗口共享 8-qubit 线路。10 → 40 → 165 维读出让 5 seed 准确率 0.6640 → 0.7720 → 0.8450，换成 8-qubit 局部 `PatchVQC`（仅 48 个量子参数）进一步升至 **0.8800 ± 0.0112** 且快 5.7 倍。详见 [break_readout.py](experiments/break_readout.py)、[push_ceiling.py](experiments/push_ceiling.py) 与 [resolve_open_issues.py](experiments/resolve_open_issues.py)。
+- **不宣称量子优势**：第五轮已把对照收紧到**近似等参数预算**（量子 5702 vs 经典 `PCA-165 + 同结构头` 5642）与**等数据预算**（同为 1800 张图 / 8 epochs）：经典 0.9030 > 量子 0.8660；**第七轮全量**（60000 / 10000、3 epochs、3 seed）把差距收窄到 **0.9554 vs 0.9421 = 1.33 pt**（配对 CI 不跨 0，经典仍显著领先且快约 1000 倍）；**第八轮**补齐了 QSVC 量子核第三条基线（0.9210 / 0.9310）与局部 `PatchVQC`（0.8800），其高分分别来自小样本二次核凸优化与 2D 局部窗口归纳偏置，不代表量子计算复杂度优势。`n=5` / `n=3` 均未做多重比较校正。
 - **不需要真机凭证**：纯模拟无需 IBM Quantum 等账号；只有切到真实量子硬件时才需要 token。
 
 ## 目录结构
@@ -74,10 +83,10 @@ quantum-mnist/
 ├── requirements.txt
 ├── qml_lab/
 │   ├── utils.py                 # 随机种子、路径、JSON、参数量、终端表格
-│   ├── data.py                  # load_mnist（PCA）/ load_mnist_raw（784 维）/ load_mnist_images（28×28 图像）
-│   ├── quantum.py               # Angle / Amplitude 编码；make_rich_layer 支持单比特 / 相邻 / 全两体可观测量与数据重上传
-│   ├── models.py                # VQC / AmplitudeVQC / RichVQC / MLP / HybridCNN / HybridRich / CNN
-│   ├── train.py                 # 分类训练循环（支持量子层单独 lr）与分批准确率评估
+│   ├── data.py                  # load_mnist（PCA）/ load_mnist_raw（784 维）/ load_mnist_images（28×28 图像）/ 无放回均衡抽样
+│   ├── quantum.py               # Angle / Amplitude 编码；make_rich_layer 支持全两体可观测量与 Pérez-Salinas 可训练重上传
+│   ├── models.py                # VQC / AmplitudeVQC / RichVQC / PatchVQC / MLP / HybridCNN / HybridRich / CNN
+│   ├── train.py                 # 分类训练循环（支持量子层单独 lr、权重衰减、余弦退火）与分批准确率评估
 │   └── viz.py                   # 指标图绘制
 ├── experiments/train_mnist.py   # 主实验：VQC vs MLP（历史单次运行）
 ├── experiments/train_amplitude.py  # 编码对照：振幅编码无需 PCA（历史单次运行）
@@ -90,7 +99,8 @@ quantum-mnist/
 ├── experiments/classical_budget.py # 等数据 / 等参数预算的经典对照（0.9030）
 ├── experiments/why_low_acc.py      # **六轮归因**：归一化损失 / 二次型天花板 / 平移敏感度
 ├── experiments/train_full_mnist.py # **七轮全量**：60000 训练 / 10000 测试，量子 + 等预算经典 + 冻结探针
-├── tests/smoke_test.py          # 离线冒烟测试（不联网、不下载 MNIST）
+├── experiments/resolve_open_issues.py # **八轮突破**：混合稳定化 / Pérez-Salinas 重上传 / QSVC 量子核 / 局部 PatchVQC
+├── tests/smoke_test.py          # 离线冒烟测试（不联网、不下载 MNIST，含 pytest 入口）
 ├── docs/DEV_NOTES.md            # 本机环境与离线数据准备备注
 ├── docs/REVIEW.md               # 方法学审查：问题清单、实测证据、参考实现对照
 ├── docs/multiseed_metrics.json  # 归档：二轮 5 seed 原始指标
@@ -101,7 +111,8 @@ quantum-mnist/
 ├── docs/budget_metrics.json     # 归档：等数据预算经典对照（4 组 × 5 seed）
 ├── docs/why_low_metrics.json    # 归档：六轮归因（双口径探针 / 二次型上限 / 平移几何）
 ├── docs/full_metrics.json       # 归档：七轮全量（25 任务 × 3 seed，全量测试集）
-├── docs/figures/                # 实测对比图（multiseed_* / ceiling_* / readout_* / push_* / why_low_* / full_mnist.png）
+├── docs/open_issues_metrics.json # 归档：八轮四大开放问题（16 组 VQC/NN + 6 组核方法 × 5 seed + 配对 CI）
+├── docs/figures/                # 实测对比图（multiseed_* / ceiling_* / readout_* / push_* / why_low.png / full_mnist.png / mnist_open_issues.png）
 ├── data/                        # 本地数据缓存（gitignore）
 └── results/                     # 运行产物（gitignore）
 ```
@@ -128,7 +139,17 @@ Windows 下把 `.venv/bin/python` 换成 `.venv\Scripts\python.exe`、路径改�
 
 `--quick` 把样本量、迭代数压到最小并强制使用 `synthetic` 数据（不联网），仅用于验证流程跑通，**不用于报告结论**；合成数据会在输出 JSON 的 `meta.note` 中明确标注。
 
-**当前最好结果（第七轮，全量 MNIST）**用下面一条重跑（6 worker 并行、纯 CPU **约 45 分钟**；最贵的 `q165` 单 seed 41–44 分钟）：
+**第八轮（闭合四大开放问题：混合稳定化 / Pérez-Salinas 重上传 / QSVC 核基线 / 局部 PatchVQC）**用下面一条重跑（12 worker 并行、纯 CPU **约 19 分钟**）：
+
+```bash
+.venv/bin/python experiments/resolve_open_issues.py --data-source idx \
+    --workers 12 --torch-threads 2 --archive docs/open_issues_metrics.json \
+    --fig-dir docs/figures
+```
+
+产物：`docs/open_issues_metrics.json`（16 组神经网络/VQC × 5 seed + 6 组量子/经典核 SVM × 5 seed + 20 项配对 95% CI）与 `docs/figures/mnist_open_issues.png`。支持 `--quick` 离线极小自检（写入 `results/quick_*`，不覆盖 `docs/`）。
+
+**第七轮（全量 MNIST：60000 训练 / 10000 测试）**用下面一条重跑（6 worker 并行、纯 CPU **约 45 分钟**；最贵的 `q165` 单 seed 41–44 分钟）：
 
 ```bash
 .venv/bin/python experiments/train_full_mnist.py --data-source idx \
@@ -436,6 +457,19 @@ Windows 下把 `.venv/bin/python` 换成 `.venv\Scripts\python.exe`、路径改�
 
 **限制**：`n=3`、t 分布 CI 未做多重比较校正；3 epochs、无正则、无增强，量子与经典**同配置**但都不是各自的最优调参；probe 用 sklearn `MLP(64,32)` / logreg，与端到端 32 宽 MLP 头不同，**不是严格上界**；1000 张均衡监控子集与全量测试集约有 1 pt 差异，以 `final_test_acc` 为准；模拟代价不含真机 O(2ⁿ) 状态制备与 165 个观测量的 shots 预算。
 
+### 第八轮：闭合四大开放问题 —— 混合稳定化 / Pérez-Salinas 重上传 / QSVC 核基线 / 局部 PatchVQC（2026-11-07）
+
+`experiments/resolve_open_issues.py`，真实 IDX 600 训练 / 200 测试、10 类、24 epochs、**5 seed**，原始数据归档 [`docs/open_issues_metrics.json`](docs/open_issues_metrics.json)，四联图 [`docs/figures/mnist_open_issues.png`](docs/figures/mnist_open_issues.png)。完整协议、根因分析与限制见 [REVIEW.md 第 14 节](docs/REVIEW.md)。
+
+![第八轮：四大开放问题的 5-seed 实测对照](docs/figures/mnist_open_issues.png)
+
+| 问题维度 | 代表模型 / 对照组 | 参数量 | 5 seed 测试准确率 | 关键配对差值（95% CI） |
+| --- | --- | --- | --- | --- |
+| **A. 混合 CNN+VQC 崩溃修复** | `hyb_light_legacy`（原版 8q Z）<br>`hyb_light_qlr`（单独 `q_lr=1e-3`）<br>`nq_light`（同前端跳过量子层）<br>**`hyb_light_stab`（纯串行稳定化 8q）**<br>`cnn_light`（CNN 直接分类） | 4258<br>4258<br>4210<br>**5162**<br>3658 | 0.5980 ± 0.1062<br>0.5760 ± 0.0774<br>0.7440 ± 0.0651<br>**0.7650 ± 0.0464**<br>0.8590 ± 0.0375 | `stab − legacy`：**+16.70 ± 11.70 pt** `[+2.18, +31.22]`<br>`stab − qlr`：**+18.90 ± 8.12 pt** `[+8.82, +28.98]`<br>`stab − nq_light`：+2.10 ± 9.85 pt `[−10.12, +14.32]`（0/5 坍缩） |
+| **B. Pérez-Salinas 可训练重上传** | `a10_z`（单次编码 Z）<br>`a10_reup_naive`（朴素重上传 Z）<br>**`a10_reup_perez_z`（可训练重上传 Z）**<br>**`a10_reup_perez_full`（+ 40 维读出）** | 742<br>742<br>**782**<br>**1742** | 0.6320 ± 0.0385<br>0.5220 ± 0.0652<br>**0.6580 ± 0.0246**<br>**0.7470 ± 0.0214** | `naive − a10_z`：−11.00 ± 8.09 pt `[−21.04, −0.96]`<br>`perez_z − naive`：**+13.60 ± 7.41 pt** `[+4.40, +22.80]`<br>`perez_full − a10_z`：**+11.50 ± 4.65 pt** `[+5.73, +17.27]` |
+| **C. 解析量子核 QSVC 基线** | **`qkernel_patch`（8q 局部 9-Patch 核）**<br>**`qkernel_amp`（10q 全局振幅核）**<br>`svm_poly2`（784 维经典二次核）<br>`svm_rbf`（784 维经典 RBF 核）<br>`qkernel_angle` / `svm_rbf_pca10`（PCA-10） | — | **0.9310 ± 0.0164**<br>**0.9210 ± 0.0074**<br>0.8980 ± 0.0225<br>0.8650 ± 0.0226<br>0.8520 / 0.8520 | `qkernel_amp − svm_rbf`：**+5.60 ± 1.60 pt** `[+3.62, +7.58]`<br>`qkernel_patch − svm_rbf`：**+6.60 ± 2.77 pt** `[+3.16, +10.04]`<br>`qkernel_angle − rbf_pca10`：0.00 ± 2.57 pt（完全持平） |
+| **D. 局部 PatchVQC 与范数保留** | `amp_b40`（10q 全局 40 维）<br>`amp_b165`（10q 全局 165 维）<br>`amp_b165_norm`（+ `‖x‖₂` + 正则）<br>`patch_vqc_4quad`（8q 共享，2×2 象限）<br>**`patch_vqc`（8q 共享，3×3 重叠窗口）**<br>`ref_pca165` / `ref_mlp784`（同批经典） | 1702<br>5702<br>5736<br>9474<br>**20364（量子 48）**<br>5642 / 25450 | 0.7720 ± 0.0115<br>0.8480 ± 0.0148<br>0.8490 ± 0.0210<br>0.8450 ± 0.0304<br>**0.8800 ± 0.0112**<br>0.8410 / 0.8640 | `b165_norm − b165`：+0.10 ± 1.47 pt（印证六轮结论）<br>`patch_vqc − b165`：**+3.20 ± 2.02 pt** `[+0.69, +5.71]`（快 5.7 倍）<br>`patch_vqc − 4quad`：**+3.50 ± 2.09 pt** `[+0.90, +6.10]`<br>`patch_vqc − ref_pca165`：**+3.90 ± 1.71 pt** `[+1.78, +6.02]` |
+
 ### 历史结果（单次运行，仅存档）
 
 > 以下三节是 2026-11-06 审查**之前**的 `seed=0` 单次实验，其中编码对照还受种子 bug 影响。数字保留供追溯，**不得用于下结论**；所有结论性表述请看上一节与 [REVIEW.md](docs/REVIEW.md)。
@@ -509,7 +543,7 @@ Windows 下把 `.venv/bin/python` 换成 `.venv\Scripts\python.exe`、路径改�
 
 ### 运行产物
 
-`results/` 与 `data/` 被 `.gitignore` 忽略，以下均为运行后本地生成；`docs/figures/` 归档了实测对比图。为让 GitHub 上的数字可核对，**各轮多 seed 实验与诊断的原始指标都已归档入库**：`docs/multiseed_metrics.json`、`docs/ceiling_metrics.json`、`docs/readout_metrics.json`、`docs/info_metrics.json`、`docs/push_metrics.json`、`docs/budget_metrics.json`、`docs/why_low_metrics.json`、`docs/full_metrics.json`。
+`results/` 与 `data/` 被 `.gitignore` 忽略，以下均为运行后本地生成；`docs/figures/` 归档了实测对比图。为让 GitHub 上的数字可核对，**各轮多 seed 实验与诊断的原始指标都已归档入库**：`docs/multiseed_metrics.json`、`docs/ceiling_metrics.json`、`docs/readout_metrics.json`、`docs/info_metrics.json`、`docs/push_metrics.json`、`docs/budget_metrics.json`、`docs/why_low_metrics.json`、`docs/full_metrics.json`、`docs/open_issues_metrics.json`。
 
 | 文件 | 内容 |
 | --- | --- |
@@ -528,6 +562,8 @@ Windows 下把 `.venv/bin/python` 换成 `.venv\Scripts\python.exe`、路径改�
 | `docs/figures/why_low.png` | 归一化损失柱状图 / 二次型天花板与数据规模曲线 |
 | `docs/full_metrics.json` | **归档的七轮全量主结果**：25 个任务 × 3 seed 的逐 epoch 曲线、全量 10000 张测试集准确率、参数 / 耗时、初始权重哈希、冻结随机酉探针 |
 | `docs/figures/full_mnist.png` | 全量量子 vs 经典柱状图（带数值标注与误差棒）/ 600 → 60000 张规模曲线 |
+| `docs/open_issues_metrics.json` | **归档的八轮突破原始数据**：混合架构稳定化、Pérez-Salinas 可训练重上传、QSVC 量子核基线、局部 `PatchVQC` 共 16 组 VQC/NN + 6 组核方法 × 5 seed 与 20 项配对 CI |
+| `docs/figures/mnist_open_issues.png` | 八轮四大开放问题 5-seed 四联对比柱状图（带误差棒与均值标注） |
 | `results/mnist_metrics.json` | 历史主实验：准确率、参数量、耗时、配置与 `meta`（含数据源标注） |
 | `results/mnist_accuracy.png` | 量子 vs 经典的测试准确率曲线 |
 | `results/mnist_params.png` / `mnist_time.png` | 参数量 / 耗时对比柱状图 |
@@ -538,13 +574,13 @@ Windows 下把 `.venv/bin/python` 换成 `.venv\Scripts\python.exe`、路径改�
 
 ## 技术栈与下一步
 
-**PennyLane**（可微分量子电路）+ **PyTorch**（混合训练），辅以 scikit-learn（PCA）/ NumPy / Matplotlib；默认 `default.qubit` 状态向量模拟。[Qiskit Machine Learning](https://qiskit.github.io/qiskit-machine-learning/) 是接 IBM 生态时的另一条路线。
+**PennyLane**（可微分量子电路）+ **PyTorch**（混合训练），辅以 scikit-learn（PCA / SVM）/ SciPy / NumPy / Matplotlib；默认 `default.qubit` 状态向量模拟。[Qiskit Machine Learning](https://qiskit.github.io/qiskit-machine-learning/) 是接 IBM 生态时的另一条路线。
 
-**已实现**：amplitude encoding 无压缩对照（`train_amplitude.py`）、输入维度与电路深度分离的容量扫描（`scan_capacity.py`）、**5 seed 受控对照与配对差值置信区间**（`train_multiseed.py`）、带非线性的 MLP 分类头与固定 / 可学习输出缩放、**9 组 × 5 seed 的瓶颈分解与量子读出信息探针**（`diagnose_ceiling.py`）、轻量 / 强特征两种混合 CNN 前端、**11 组 × 5 seed 的多可观测量 / 数据重上传 / 单独 lr 对照**（`break_readout.py`）、**全两体可观测量（`zzall` / `xxall` / `yyall`）**、**信息上界分解诊断**（`probe_information.py`）、**9 组 × 5 seed 的加宽读出 + 数据规模正式对照**（`push_ceiling.py`，支持多进程）、**等数据 / 近似等参数预算经典对照**（`classical_budget.py`）、**六轮归因诊断**（`why_low_acc.py`：归一化损失 / 二次型天花板 / 平移敏感度，双探针口径）、**全量 MNIST 训练**（`train_full_mnist.py`：60000 / 10000、25 任务 × 3 seed、`--redraw-from` 单独重画图）。方法学审查见 [`docs/REVIEW.md`](docs/REVIEW.md)。
+**已实现**：amplitude encoding 无压缩对照（`train_amplitude.py`）、输入维度与电路深度分离的容量扫描（`scan_capacity.py`）、**5 seed 受控对照与配对差值置信区间**（`train_multiseed.py`）、带非线性的 MLP 分类头与固定 / 可学习输出缩放、**9 组 × 5 seed 的瓶颈分解与量子读出信息探针**（`diagnose_ceiling.py`）、轻量 / 强特征两种混合 CNN 前端、**11 组 × 5 seed 的多可观测量 / 数据重上传 / 单独 lr 对照**（`break_readout.py`）、**全两体可观测量（`zzall` / `xxall` / `yyall`）**、**信息上界分解诊断**（`probe_information.py`）、**9 组 × 5 seed 的加宽读出 + 数据规模正式对照**（`push_ceiling.py`，支持多进程）、**等数据 / 近似等参数预算经典对照**（`classical_budget.py`）、**六轮归因诊断**（`why_low_acc.py`：归一化损失 / 二次型天花板 / 平移敏感度，双探针口径）、**全量 MNIST 训练**（`train_full_mnist.py`：60000 / 10000、25 任务 × 3 seed、无放回均衡抽样）、**第八轮架构与方法学突破**（`resolve_open_issues.py`：纯串行稳定化混合模型 `HybridRichClassifier(stabilize=True)`、Pérez-Salinas 可训练重上传、解析量子核 QSVC 第三条基线、3×3 重叠局部窗口权重共享 `PatchVQCClassifier`）。方法学审查见 [`docs/REVIEW.md`](docs/REVIEW.md)。
 
-**已试过但不成立 / 未解决**：给量子层单独 `lr=0.001` 没有消除轻量混合前端的训练崩溃；朴素数据重上传在 Z-only 读出下反而掉 11 pt（实现与原始文献不同）；把分类头 hidden 32 → 128 只 +0.20 pt（不显著）；±1px 平移增强反而 −4.40 pt（振幅编码无平移不变性）。这四项不再列为待办。
+**已验证并闭合的历史负结果**：给量子层单独 `lr=0.001` 未能消除混合前端崩溃，但换用跨样本 `BatchNorm1d + N(0,0.1²) + 32 维读出`（`stabilize=True`）已彻底消除崩溃（0.598 → **0.765**）；朴素数据重上传掉 11 pt 是因缺少有界化与可训练频率缩放，换用 Pérez-Salinas 可训练重上传后回升 **+13.60 pt**（配 40 维读出达 **0.747**）；把分类头 hidden 32 → 128 只 +0.20 pt、补回全局 `‖x‖₂` 只 +0.10 pt（均不显著）；±1px 平移增强在全局振幅编码下掉 4.40 pt，而改用 3×3 重叠局部窗口 `PatchVQC`（8 qubits 共享权重）在 600 张图上提升至 **0.8800 ± 0.0112** 且快 5.7 倍。
 
-下一步：**补上「归纳偏置」这一课**（优先级最高）—— 全量下量子 0.9421 已与冻结随机酉读出探针 0.9440 打平，等预算经典 0.9554，继续加数据 / 加观测量 / 加 epochs 的边际都很小（40 → 165 维只剩 +4.07 pt）；可试量子卷积（局部 patch 编码 + 共享线路）、按 Pérez-Salinas 原始设计重做 data re-uploading，或引入更强的非线性后处理打破二次型函数类。六轮提出的「给 1800 张组补正则」已由全量实验**部分回答**：那 6.9 pt 主要是数据 / 训练预算而非纯优化问题，优先级下调。此外：把全量扩到 ≥20 seed 并做多重比较校正（当前仅 `n=3`）、量子核 QSVC 第三条基线、混合架构里量子层的初始化 / 深度 / lr 系统调参、噪声模型与有限 `--shots`（165 维按 QWC 分组需 3 个测量设置，振幅编码另有 O(2ⁿ) 状态制备）、`lightning.gpu` 后端推到 20+ qubits。
+下一步：把 `PatchVQCClassifier` 推广到全量 60000 张 MNIST 训练并与等参数经典卷积做 ≥20 seed 对照（含多重比较校正）、引入多层量子卷积（QCNN 池化）打破单层局部二次型函数类、噪声模型与有限 `--shots` 实测（165 维按 QWC 对易组仅需 Z/X/Y 3 个测量基，但每个基仍需足够 shots 抑制采样方差）、`lightning.gpu` 后端推到 20+ qubits。
 
 ## 相关仓库与许可
 

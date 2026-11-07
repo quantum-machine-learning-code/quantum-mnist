@@ -58,7 +58,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--classes", type=int, default=10)
     p.add_argument("--data-source", type=str, default="idx")
     p.add_argument("--data-dir", type=str, default="data")
+    p.add_argument("--out", type=str, default="results")
     p.add_argument("--archive", type=str, default="docs/budget_metrics.json")
+    p.add_argument("--quick", action="store_true", help="离线极小自检，不覆盖 docs/ 正式归档")
     return p.parse_args()
 
 
@@ -72,6 +74,13 @@ def _stats(values) -> dict:
 
 def main() -> None:
     args = parse_args()
+    if args.quick:
+        args.seeds = "0"
+        args.pool_train, args.n_train, args.test_samples = 60, 40, 20
+        args.classes = 4
+        args.data_source = "synthetic"
+        if args.archive == "docs/budget_metrics.json":
+            args.archive = "results/quick_budget_metrics.json"
     dd = Path(args.data_dir)
     data_dir = str(dd if dd.is_absolute() else ROOT / dd)
     kw = dict(classes=args.classes, source=args.data_source,
@@ -91,13 +100,18 @@ def main() -> None:
     Xi, yi = np.ascontiguousarray(Xi[idx]), np.ascontiguousarray(yi[idx])
 
     from sklearn.decomposition import PCA
-    pca = PCA(n_components=165, random_state=0)
+    pca_dim = min(165, Xr.shape[0], Xr.shape[1])
+    pca = PCA(n_components=pca_dim, random_state=0)
     Xp = pca.fit_transform(Xr).astype(np.float32)
     Xpt = pca.transform(Xte).astype(np.float32)
+    if pca_dim < 165:
+        Xp = np.pad(Xp, ((0, 0), (0, 165 - pca_dim)))
+        Xpt = np.pad(Xpt, ((0, 0), (0, 165 - pca_dim)))
 
     seeds = [int(s) for s in args.seeds.split(",") if s.strip()]
     runs = {g: {} for g in GROUPS}
     for g, (kind, hidden, epochs) in GROUPS.items():
+        eff_epochs = 2 if args.quick else epochs
         for seed in seeds:
             set_seed(seed)
             if kind == "img":
@@ -109,7 +123,7 @@ def main() -> None:
             else:
                 X, y, Xt, yt = Xr, yr, Xte, yte
                 model = MLPClassifier(X.shape[1], args.classes, hidden=hidden)
-            h = train_classifier(model, X, y, Xt, yt, epochs=epochs,
+            h = train_classifier(model, X, y, Xt, yt, epochs=eff_epochs,
                                  batch_size=args.batch_size, lr=args.lr,
                                  seed=seed, verbose=False, eval_train=False,
                                  eval_batch_size=64)
@@ -118,7 +132,7 @@ def main() -> None:
                 "final_loss": round(float(h["train_loss"][-1]), 4),
                 "seconds": round(float(h["total_seconds"]), 2),
                 "params": int(count_parameters(model)),
-                "n_train": int(len(y)), "epochs": epochs,
+                "n_train": int(len(y)), "epochs": eff_epochs,
                 "test_acc_curve": [round(float(v), 4) for v in h["test_acc"]],
             }
             print(f"  [{g:18s} seed {seed}] acc={runs[g][str(seed)]['final_test_acc']:.4f} "

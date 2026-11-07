@@ -1,21 +1,27 @@
-"""离线冒烟测试：直接 python tests/smoke_test.py 运行，不依赖 pytest / 不联网。"""
+"""离线冒烟测试：支持直接 python tests/smoke_test.py 或 pytest 运行，不联网。"""
 from __future__ import annotations
 
+import subprocess
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 
 import numpy as np
 import torch
 
-from qml_lab.data import load_mnist, load_mnist_images, load_mnist_raw
+from qml_lab.data import (
+    _select, fetch_mnist_raw, l2_normalize, load_mnist,
+    load_mnist_images, load_mnist_raw, stratified_subset,
+)
 from qml_lab.models import (
-    CNNClassifier, HybridCNNClassifier, HybridRichClassifier, MLPClassifier,
+    AmplitudeVQCClassifier, CNNClassifier, HybridCNNClassifier,
+    HybridRichClassifier, MLPClassifier, PatchVQCClassifier,
     RichVQCClassifier, VQCClassifier,
 )
 from qml_lab.quantum import (
-    make_amplitude_layer, make_rich_layer, n_readout,
+    make_amplitude_layer, make_rich_layer, n_quantum_params, n_readout,
 )
 from qml_lab.train import train_classifier
 from qml_lab.utils import set_seed
@@ -39,7 +45,11 @@ def check_classifier() -> None:
     y = np.asarray(y_train, dtype=float)
     assert bool(((y >= 0) & (y <= 1)).all()), "标签应落在 0..1"
 
-    for name, model in [("VQC", VQCClassifier(2, 2, 1)), ("MLP", MLPClassifier(2, 2, 4))]:
+    vqc = VQCClassifier(2, 2, 1)
+    qf = vqc.quantum_features(torch.as_tensor(X_train[:4], dtype=torch.float32))
+    assert tuple(qf.shape) == (4, 2) and qf.dtype == torch.float32
+
+    for name, model in [("VQC", vqc), ("MLP", MLPClassifier(2, 2, 4))]:
         hist = train_classifier(
             model=model,
             X_train=X_train, y_train=y_train,
@@ -76,6 +86,7 @@ def check_heads_and_controls() -> None:
         X_test=X_test, y_test=y_test,
         epochs=1, batch_size=8, lr=0.05, seed=0,
         eval_batch_size=8, verbose=False, eval_train=False,
+        weight_decay=1e-4, cosine_lr=True,
     )
     assert all(v is None for v in hist["train_acc"]), \
         "eval_train=False 时 train_acc 应标记为未测量"
@@ -90,7 +101,7 @@ def check_heads_and_controls() -> None:
 
 
 def check_hybrid_and_images() -> None:
-    """图像数据路径与混合 CNN 前端：形状、抽样一致性、前向与梯度。"""
+    """图像数据路径与混合 CNN 前端（含 stabilize=True）：形状、抽样一致性、前向与梯度。"""
     X, y, Xt, yt, meta = load_mnist_images(
         n_train=16, n_test=8, classes=2, source="synthetic", seed=0)
     Xr, yr, Xrt, yrt, _ = load_mnist_raw(
@@ -122,13 +133,39 @@ def check_hybrid_and_images() -> None:
         assert tuple(out.shape) == (4, 2)
         out.sum().backward()
 
+    # 测试稳定化混合架构 (stabilize=True)
+    set_seed(0)
+    hyb_stab = HybridRichClassifier(
+        n_qubits=3, n_classes=2, n_layers=1, hidden=8,
+        quantum=True, head="mlp", scale=1.0, frontend="light",
+        observables="z+x+y+zzall", stabilize=True,
+    )
+    assert hyb_stab.post_norm is not None, "stabilize=True 应启用读出 LayerNorm"
+    assert float(hyb_stab.q.layer.weights.detach().std().item()) < 0.2, "stabilize=True 应使用近零初始化"
+    z_stab = hyb_stab.quantum_features(xb)
+    assert tuple(z_stab.shape) == (4, n_readout(3, "z+x+y+zzall"))
+    logits_stab = hyb_stab(xb)
+    logits_stab.sum().backward()
+    for name, p in hyb_stab.named_parameters():
+        assert p.grad is not None and bool(torch.isfinite(p.grad).all()), \
+            f"HybridRich(stabilize=True) 的 {name} 梯度缺失或非有限"
+
 
 def check_readout_layers() -> None:
-    """多可观测量 / 数据重上传：维度、梯度、与旧基线的逐位一致性。"""
+    """多可观测量 / 数据重上传（含可训练重上传）/ AmplitudeVQC / 范数保留。"""
     B, nq = 8, 4
-    x = torch.randn(B, 16)
-    x = x / x.norm(dim=1, keepdim=True)  # 2**4 = 16，振幅编码可装下
+    raw_x = torch.randn(B, 16) * 2.5 + 1.0
+    x = raw_x / raw_x.norm(dim=1, keepdim=True)  # 2**4 = 16，振幅编码可装下
     xa = torch.randn(B, nq)
+
+    # AmplitudeVQCClassifier 与 .quantum_features()
+    set_seed(0)
+    amp_clf = AmplitudeVQCClassifier(nq, 2, 2, n_features=16, head="mlp", scale=5.0, hidden=8)
+    zf = amp_clf.quantum_features(x)
+    assert tuple(zf.shape) == (B, nq) and zf.dtype == torch.float32
+    out_amp = amp_clf(x)
+    assert tuple(out_amp.shape) == (B, 2)
+    out_amp.sum().backward()
 
     # 回归：新层在 "z" 规格下必须与旧振幅层逐位相同
     set_seed(0)
@@ -167,7 +204,7 @@ def check_readout_layers() -> None:
         assert g is not None and bool(torch.isfinite(g).all()) and float(g.norm()) > 0, \
             f"{spec} 梯度缺失 / 非有限 / 全零"
 
-    # 重上传：参数 shape 与初始权重不变，但输入被每层重新嵌入
+    # 朴素重上传：参数 shape 与初始权重不变，但输入被每层重新嵌入
     set_seed(0)
     plain = make_rich_layer(nq, 2, "angle", "z+x")
     set_seed(0)
@@ -179,15 +216,33 @@ def check_readout_layers() -> None:
     out.pow(2).mean().backward()
     assert float(reup.layer.weights.grad.norm()) > 0, "重上传层梯度全零"
 
-    # 分类器 + 量子层单独学习率
+    # Pérez-Salinas 可训练重上传 (reupload="trainable" / trainable_reupload=True)
+    set_seed(0)
+    treup = make_rich_layer(nq, 2, "angle", "z+x", reupload="trainable")
+    assert hasattr(treup.layer, "in_scale") and hasattr(treup.layer, "in_shift")
+    assert n_quantum_params(nq, 2, trainable_reupload=True) == 2 * nq * 3 + 4 * nq
+    out_tr = treup(xa)
+    assert tuple(out_tr.shape) == (B, 2 * nq)
+    out_tr.pow(2).mean().backward()
+    assert float(treup.layer.weights.grad.norm()) > 0
+    assert float(treup.layer.in_scale.grad.norm()) > 0
+    assert float(treup.layer.in_shift.grad.norm()) > 0
+
+    # 分类器 + 范数保留 (preserve_norm=True) + .quantum_features()
     y = torch.randint(0, 2, (B,))
     set_seed(0)
-    model = RichVQCClassifier(nq, 2, 2, "amplitude", "z+x+zz",
-                              n_features=16, head="mlp", scale=5.0)
-    torch.nn.functional.cross_entropy(model(x), y).backward()
-    for name, p in model.named_parameters():
+    model_norm = RichVQCClassifier(
+        nq, 2, 2, "amplitude", "z+x+zz",
+        n_features=16, head="mlp", scale=5.0,
+        preserve_norm=True, post_norm=True,
+    )
+    assert model_norm.readout_dim == n_readout(nq, "z+x+zz") + 1
+    qf_norm = model_norm.quantum_features(raw_x)
+    assert tuple(qf_norm.shape) == (B, model_norm.readout_dim)
+    torch.nn.functional.cross_entropy(model_norm(raw_x), y).backward()
+    for name, p in model_norm.named_parameters():
         assert p.grad is not None and bool(torch.isfinite(p.grad).all()), \
-            f"RichVQC 的 {name} 梯度缺失或非有限"
+            f"RichVQC(preserve_norm=True) 的 {name} 梯度缺失或非有限"
 
     img = torch.rand(B, 1, 28, 28)
     set_seed(0)
@@ -208,11 +263,85 @@ def check_readout_layers() -> None:
         "quantum_lr 参数分组导致训练指标非有限"
 
 
+def check_patch_vqc_and_sampling() -> None:
+    """测试 PatchVQCClassifier 局部多窗口量子模型与无放回均衡抽样。"""
+    B = 4
+    # 构造 8x8 迷你图像，其中第 0 张图的左上角 4x4 patch 全为 0（验证全零背景 patch 安全性）
+    imgs = torch.rand(B, 1, 8, 8)
+    imgs[0, 0, :4, :4] = 0.0
+    y = torch.tensor([0, 1, 0, 1], dtype=torch.long)
+
+    set_seed(0)
+    pmodel = PatchVQCClassifier(
+        n_qubits=4, n_classes=2, n_layers=1,
+        patch_size=4, stride=4, image_size=8,
+        observables="z+x+zz", preserve_patch_norm=True,
+        hidden=8, scale=1.0, dropout=0.0,
+    )
+    assert pmodel.n_patches == 4
+    zf = pmodel.quantum_features(imgs)
+    assert tuple(zf.shape) == (B, 4 * (n_readout(4, "z+x+zz") + 1))
+    assert bool(torch.isfinite(zf).all()), "全零背景 patch 导致量子特征出现 NaN/Inf"
+    logits = pmodel(imgs)
+    assert tuple(logits.shape) == (B, 2)
+    torch.nn.functional.cross_entropy(logits, y).backward()
+    for name, p in pmodel.named_parameters():
+        assert p.grad is not None and bool(torch.isfinite(p.grad).all()), \
+            f"PatchVQC 的 {name} 梯度缺失或非有限"
+
+    # 测试 _select 与 stratified_subset：当某类样本数 < n // C 但总样本数 >= n 时绝不重复抽样
+    X_imbal = np.arange(30, dtype=np.float32).reshape(30, 1)
+    # 类别 0 只有 6 个样本，类别 1 有 24 个样本（模拟 MNIST 数字 5 样本偏少）
+    y_imbal = np.array([0] * 6 + [1] * 24, dtype=np.int64)
+    Xs, ys = stratified_subset(X_imbal, y_imbal, n=20, classes=2, seed=0)
+    assert len(Xs) == 20 and len(ys) == 20
+    assert len(np.unique(Xs[:, 0])) == 20, "当 n <= 总样本数时不应出现有放回重复样本"
+    assert int((ys == 0).sum()) == 6 and int((ys == 1).sum()) == 14
+
+    Xs_all, ys_all = stratified_subset(X_imbal, y_imbal, n=30, classes=2, seed=0)
+    assert len(np.unique(Xs_all[:, 0])) == 30, "全量抽样必须无遗漏、无重复覆盖全部 30 个样本"
+
+    # 测试公开辅助函数 fetch_mnist_raw 与 l2_normalize
+    Xr, yr, Xe, ye = fetch_mnist_raw("data", source="synthetic", seed=0)
+    Xn = l2_normalize(Xr[:5])
+    assert np.allclose(np.linalg.norm(Xn, axis=1), 1.0, atol=1e-5)
+
+
+def check_quick_scripts() -> None:
+    """验证 probe_information.py、classical_budget.py 与 resolve_open_issues.py 的 --quick 契约不报错且不污染 docs/。"""
+    for script, expected_json in [
+        ("experiments/probe_information.py", "results/quick_info_metrics.json"),
+        ("experiments/classical_budget.py", "results/quick_budget_metrics.json"),
+        ("experiments/resolve_open_issues.py", "results/quick_open_issues_metrics.json"),
+    ]:
+        proc = subprocess.run(
+            [sys.executable, str(ROOT / script), "--quick", "--no-figures"]
+            if "resolve_open_issues" in script
+            else [sys.executable, str(ROOT / script), "--quick"],
+            cwd=str(ROOT), capture_output=True, text=True, check=False,
+        )
+        assert proc.returncode == 0, f"{script} --quick 失败:\n{proc.stderr}\n{proc.stdout}"
+        out_file = ROOT / expected_json
+        assert out_file.exists(), f"{script} --quick 未生成 {expected_json}"
+        out_file.unlink(missing_ok=True)
+
+
+# 供 pytest 自动发现的 test_* 入口
+test_classifier = check_classifier
+test_heads_and_controls = check_heads_and_controls
+test_hybrid_and_images = check_hybrid_and_images
+test_readout_layers = check_readout_layers
+test_patch_vqc_and_sampling = check_patch_vqc_and_sampling
+test_quick_scripts = check_quick_scripts
+
+
 def main() -> None:
     check_classifier()
     check_heads_and_controls()
     check_hybrid_and_images()
     check_readout_layers()
+    check_patch_vqc_and_sampling()
+    check_quick_scripts()
     print("SMOKE OK")
 
 
