@@ -265,9 +265,8 @@ def main() -> None:
         args.train_samples, args.test_samples, args.big_train = 40, 20, 60
         args.classes = 4
         args.data_source = "synthetic"
-        args.out = "results"
         if args.archive == "docs/info_metrics.json":
-            args.archive = "results/quick_info_metrics.json"
+            args.archive = str(Path(args.out) / "quick_info_metrics.json")
         nq = 4
         c_dims = [4, 8, 16]
     seed = int(args.seeds.split(",")[0])
@@ -375,7 +374,9 @@ def main() -> None:
                  encoding="utf-8")
     print(f"\nsaved: {p}", flush=True)
     if args.archive:
-        arc = ROOT / args.archive
+        arc = Path(args.archive)
+        if not arc.is_absolute():
+            arc = ROOT / arc
         arc.parent.mkdir(parents=True, exist_ok=True)
         arc.write_text(json.dumps(payload, indent=2, ensure_ascii=False,
                                   default=float), encoding="utf-8")

@@ -463,9 +463,11 @@ class HybridRichClassifier(HybridCNNClassifier):
         if self.stabilize and h.shape[0] == 1 and self.training:
             # 单样本 batch 下临时以 eval 统计量通过 pre_net 中的 BatchNorm1d
             was_training = self.pre_net.training
-            self.pre_net.eval()
-            f = self.pre_net(h)
-            self.pre_net.train(was_training)
+            try:
+                self.pre_net.eval()
+                f = self.pre_net(h)
+            finally:
+                self.pre_net.train(was_training)
         else:
             f = self.pre_net(h)
         return f * math.pi / 2.0

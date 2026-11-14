@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -12,7 +13,7 @@ import numpy as np
 import torch
 
 from qml_lab.data import (
-    _select, fetch_mnist_raw, l2_normalize, load_mnist,
+    fetch_mnist_raw, l2_normalize, load_mnist,
     load_mnist_images, load_mnist_raw, stratified_subset,
 )
 from qml_lab.models import (
@@ -308,22 +309,21 @@ def check_patch_vqc_and_sampling() -> None:
 
 
 def check_quick_scripts() -> None:
-    """验证 probe_information.py、classical_budget.py 与 resolve_open_issues.py 的 --quick 契约不报错且不污染 docs/。"""
-    for script, expected_json in [
-        ("experiments/probe_information.py", "results/quick_info_metrics.json"),
-        ("experiments/classical_budget.py", "results/quick_budget_metrics.json"),
-        ("experiments/resolve_open_issues.py", "results/quick_open_issues_metrics.json"),
-    ]:
-        proc = subprocess.run(
-            [sys.executable, str(ROOT / script), "--quick", "--no-figures"]
-            if "resolve_open_issues" in script
-            else [sys.executable, str(ROOT / script), "--quick"],
-            cwd=str(ROOT), capture_output=True, text=True, check=False,
-        )
-        assert proc.returncode == 0, f"{script} --quick 失败:\n{proc.stderr}\n{proc.stdout}"
-        out_file = ROOT / expected_json
-        assert out_file.exists(), f"{script} --quick 未生成 {expected_json}"
-        out_file.unlink(missing_ok=True)
+    """验证 probe_information.py、classical_budget.py 与 resolve_open_issues.py 的 --quick 契约不报错且不污染 docs/ 或 results/。"""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_path = Path(tmpdir)
+        for script, expected_name in [
+            ("experiments/probe_information.py", "quick_info_metrics.json"),
+            ("experiments/classical_budget.py", "quick_budget_metrics.json"),
+            ("experiments/resolve_open_issues.py", "quick_open_issues_metrics.json"),
+        ]:
+            cmd = [sys.executable, str(ROOT / script), "--quick", "--out", tmpdir]
+            if "resolve_open_issues" in script:
+                cmd.append("--no-figures")
+            proc = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True, check=False)
+            assert proc.returncode == 0, f"{script} --quick 失败:\n{proc.stderr}\n{proc.stdout}"
+            out_file = tmp_path / expected_name
+            assert out_file.exists(), f"{script} --quick 未在临时目录生成 {expected_name}"
 
 
 # 供 pytest 自动发现的 test_* 入口

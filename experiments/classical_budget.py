@@ -80,7 +80,7 @@ def main() -> None:
         args.classes = 4
         args.data_source = "synthetic"
         if args.archive == "docs/budget_metrics.json":
-            args.archive = "results/quick_budget_metrics.json"
+            args.archive = str(Path(args.out) / "quick_budget_metrics.json")
     dd = Path(args.data_dir)
     data_dir = str(dd if dd.is_absolute() else ROOT / dd)
     kw = dict(classes=args.classes, source=args.data_source,
@@ -157,7 +157,9 @@ def main() -> None:
                    "参数预算仍不对等（量子组 5702 参数 vs MLP-784 25450）；"
                    "n=5 未做多重比较校正。"),
     }
-    p = ROOT / args.archive
+    p = Path(args.archive)
+    if not p.is_absolute():
+        p = ROOT / p
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(out, indent=2, ensure_ascii=False, default=float),
                  encoding="utf-8")

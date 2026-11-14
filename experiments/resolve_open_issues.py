@@ -507,11 +507,10 @@ def main() -> None:
         args.batch_size = 12
         args.workers = 1
         args.data_source = "synthetic"
-        args.out = "results"
         if args.archive == "docs/open_issues_metrics.json":
-            args.archive = "results/quick_open_issues_metrics.json"
+            args.archive = str(Path(args.out) / "quick_open_issues_metrics.json")
         if args.fig_dir == "docs/figures":
-            args.fig_dir = "results"
+            args.fig_dir = args.out
 
     t_start = time.perf_counter()
     seeds = [int(s) for s in args.seeds.split(",") if s.strip()]

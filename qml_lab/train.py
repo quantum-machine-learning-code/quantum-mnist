@@ -120,9 +120,9 @@ def train_classifier(model, X_train, y_train, X_test, y_test, epochs: int = 20,
             with torch.no_grad():
                 for start in range(0, n, eval_batch_size):
                     yb = ytr[start:start + eval_batch_size]
-                    l = loss_fn(model(Xtr[start:start + eval_batch_size]), yb)
+                    loss = loss_fn(model(Xtr[start:start + eval_batch_size]), yb)
                     b = yb.numel()
-                    loss_sum += l.item() * b
+                    loss_sum += loss.item() * b
                     cnt += b
             train_loss = loss_sum / cnt if cnt else 0.0
             train_acc = evaluate_accuracy(model, Xtr, ytr, batch_size=eval_batch_size)

@@ -206,7 +206,8 @@ def multiplicity_recheck() -> dict:
         se = (hi - lo) / (2 * t975) if t975 else 0.0
         t = abs(v["mean_pt"]) / se if se > 0 else 0.0
         bsig = t > tbonf
-        naive += int(sig); bonf += int(bsig)
+        naive += int(sig)
+        bonf += int(bsig)
         rows[k] = {"mean_pt": v["mean_pt"], "t": round(t, 3),
                    "naive_significant": sig, "bonferroni_significant": bsig}
     return {"n_tests": n, "t_threshold_naive": round(t975, 3),

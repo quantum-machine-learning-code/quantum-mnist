@@ -1,5 +1,7 @@
 # 量子手写数字识别 · Quantum MNIST
 
+[English](README_EN.md) | 简体中文
+
 ![Python](https://img.shields.io/badge/Python-3.11%2B-blue)
 ![PennyLane](https://img.shields.io/badge/PennyLane-0.45-9b59b6)
 ![PyTorch](https://img.shields.io/badge/PyTorch-2.x-ee4c2c)

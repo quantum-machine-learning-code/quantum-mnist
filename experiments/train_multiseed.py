@@ -232,12 +232,17 @@ def make_figures(curves: dict, summary: dict, fig_dir: Path) -> list[str]:
         ax.plot(xs, m, label=summary[key]["label"], color=color, lw=1.8)
         ax.fill_between(xs, m - s, m + s, color=color, alpha=0.13)
     ax.axhline(0.1, ls="--", lw=1, color="#9ca3af", label="chance (10 classes)")
-    ax.set_xlabel("epoch"); ax.set_ylabel("test accuracy")
+    ax.set_xlabel("epoch")
+    ax.set_ylabel("test accuracy")
     ax.set_title("Multi-seed test accuracy (mean +/- 1 SD, n=%d)" % next(iter(curves.values())).shape[0])
-    ax.set_ylim(0, 1.0); ax.grid(alpha=0.25); ax.legend(fontsize=8, loc="lower right")
+    ax.set_ylim(0, 1.0)
+    ax.grid(alpha=0.25)
+    ax.legend(fontsize=8, loc="lower right")
     fig.tight_layout()
     p1 = fig_dir / "multiseed_accuracy.png"
-    fig.savefig(p1, dpi=150); plt.close(fig); made.append(str(p1))
+    fig.savefig(p1, dpi=150)
+    plt.close(fig)
+    made.append(str(p1))
 
     # 柱状：最终准确率 + 误差棒
     keys = list(summary.keys())
@@ -254,12 +259,15 @@ def make_figures(curves: dict, summary: dict, fig_dir: Path) -> list[str]:
                 ha="center", fontsize=8)
     ax.set_xticks(range(len(keys)))
     ax.set_xticklabels(keys, rotation=35, ha="right", fontsize=8)
-    ax.set_ylabel("final test accuracy"); ax.set_ylim(0, 1.0)
+    ax.set_ylabel("final test accuracy")
+    ax.set_ylim(0, 1.0)
     ax.set_title("Final accuracy after %d epochs (mean +/- 1 SD, error bars)" % epochs)
     ax.grid(axis="y", alpha=0.25)
     fig.tight_layout()
     p2 = fig_dir / "multiseed_bars.png"
-    fig.savefig(p2, dpi=150); plt.close(fig); made.append(str(p2))
+    fig.savefig(p2, dpi=150)
+    plt.close(fig)
+    made.append(str(p2))
     return made
 
 
