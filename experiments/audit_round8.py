@@ -11,8 +11,8 @@ A. **QSVC 恒等性复算**：`qkernel_amp = (x_hat^T x_hat')^2` 与经典二次
 B. **PatchVQC 量子层消融**：把共享 8-qubit VQC 换成共享的
    `Linear(196, 32) + Tanh`，其余（3x3 重叠 14x14 窗口、逐 patch L2 归一化、
    样本内相对范数加权、拼接 9 个窗口范数、BatchNorm1d(297)、dropout 0.1、
-   hidden=64 的 MLP 头、scale=1.0、24 epochs / lr 0.01 / weight_decay 1e-4 /
-   余弦退火）逐项保持一致。固定 seed=0 数据切分，5 个 seed 只改初始化，
+   hidden=64 的 MLP 头、scale=1.0、24 epochs / batch 64 / lr 0.01 /
+   对封装层施加 weight_decay 1e-4 且豁免 patch 变换层 / 余弦退火）逐项保持一致。固定 seed=0 数据切分，5 个 seed 只改初始化，
    与第八轮 VQC 组口径一致，因此可做逐 seed 配对检验。
    经典替身参数更多（约 2.6 万 vs 2.0 万），是给经典组的 handicap：
    若打平或更好，说明 0.880 主要来自经典局部窗口归纳偏置。
@@ -147,9 +147,9 @@ def ablation(args, seeds: list[int]) -> dict:
         t0 = time.perf_counter()
         h = train_classifier(
             model, Xi, yi, Xit, yit,
-            epochs=args.epochs, batch_size=32, lr=0.01, seed=s,
+            epochs=args.epochs, batch_size=64, lr=0.01, seed=s,
             eval_batch_size=64, verbose=False, eval_train=False,
-            weight_decay=1e-4, cosine_lr=True,
+            weight_decay=1e-4, cosine_lr=True, no_decay_modules=("proj",),
         )
         runs.append({"seed": s, "acc": round(float(h["final_test_acc"]), 4),
                      "loss": round(float(h["train_loss"][-1]), 4),

@@ -71,42 +71,42 @@
     "runs": [
       {
         "seed": 0,
-        "acc": 0.885,
-        "loss": 0.002,
+        "acc": 0.88,
+        "loss": 0.0052,
         "params": 26620,
-        "seconds": 6.19
+        "seconds": 3.26
       },
       {
         "seed": 1,
-        "acc": 0.9,
-        "loss": 0.0029,
+        "acc": 0.875,
+        "loss": 0.0028,
         "params": 26620,
-        "seconds": 2.27
+        "seconds": 1.31
       },
       {
         "seed": 2,
-        "acc": 0.895,
-        "loss": 0.0063,
+        "acc": 0.9,
+        "loss": 0.0037,
         "params": 26620,
-        "seconds": 2.27
+        "seconds": 1.31
       },
       {
         "seed": 3,
-        "acc": 0.895,
-        "loss": 0.0037,
+        "acc": 0.91,
+        "loss": 0.0026,
         "params": 26620,
-        "seconds": 2.24
+        "seconds": 1.23
       },
       {
         "seed": 4,
-        "acc": 0.885,
-        "loss": 0.0033,
+        "acc": 0.89,
+        "loss": 0.0043,
         "params": 26620,
-        "seconds": 2.32
+        "seconds": 1.42
       }
     ],
-    "mean": 0.892,
-    "std": 0.0067,
+    "mean": 0.891,
+    "std": 0.0143,
     "paired_with_patch_vqc": {
       "patch_vqc_per_seed": [
         0.885,
@@ -116,24 +116,24 @@
         0.865
       ],
       "ablation_per_seed": [
-        0.885,
+        0.88,
+        0.875,
         0.9,
-        0.895,
-        0.895,
-        0.885
+        0.91,
+        0.89
       ],
       "diff_pt_linear_minus_quantum": [
+        -0.5,
         0.0,
-        2.5,
+        2.0,
         1.5,
-        0.0,
-        2.0
+        2.5
       ],
-      "mean_pt": 1.2,
-      "std_pt": 1.151,
+      "mean_pt": 1.1,
+      "std_pt": 1.294,
       "ci95_pt": [
-        -0.229,
-        2.629
+        -0.507,
+        2.707
       ]
     }
   },
@@ -266,5 +266,5 @@
       }
     }
   },
-  "wall_seconds": 21.14
+  "wall_seconds": 17.16
 }

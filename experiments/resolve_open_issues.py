@@ -19,7 +19,7 @@ Issue C — 量子核方法（QSVC）第三条基线 vs 经典核 SVM（5 seeds�
   * 补齐 README / REVIEW 长期缺失的第三条量子基线（Analytical Quantum Kernel SVM）：
     - ``qkernel_amp``：10-qubit 全局振幅编码量子核 K(x,x') = |<psi_amp(x)|psi_amp(x')>|^2 = (x^T x')^2
     - ``qkernel_patch``：8-qubit 局部 3x3 重叠 Patch（14x14, stride 7）振幅量子核
-    - ``qkernel_angle``：10-qubit 角度编码量子核 K(x,x') = prod_i cos^2((x_i - x'_i)/4)（PCA-10）
+    - ``qkernel_angle``：10-qubit 角度编码量子核 K(x,x') = prod_i cos^2((x_i - x'_i)/2)（PCA-10）
     并与同切分下的经典 ``svm_poly2``、``svm_rbf``、``svm_rbf_pca10`` 直接配对比较。
 
 Issue D — 打破全局振幅编码无局部性瓶颈：局部多 Patch 权重共享量子分类器（PatchVQC）与范数保留：
@@ -316,10 +316,10 @@ def evaluate_quantum_kernels(cfg: dict, seeds: list[int]) -> dict:
             "seconds": round(time.perf_counter() - t0, 3),
         }
 
-        # 3. AngleEmbedding 10-qubit Product Quantum Kernel: prod_i cos^2((x_i - x'_i)/4)
+        # 3. AngleEmbedding(RY) 10-qubit Product Quantum Kernel: prod_i cos^2((x_i - x'_i)/2)
         t0 = time.perf_counter()
-        diff_tr = (Xps[:, None, :] - Xps[None, :, :]) * 0.25
-        diff_te = (Xpst[:, None, :] - Xps[None, :, :]) * 0.25
+        diff_tr = (Xps[:, None, :] - Xps[None, :, :]) * 0.5
+        diff_te = (Xpst[:, None, :] - Xps[None, :, :]) * 0.5
         K_a_tr = np.prod(np.cos(diff_tr) ** 2, axis=-1)
         K_a_te = np.prod(np.cos(diff_te) ** 2, axis=-1)
         clf = SVC(kernel="precomputed", C=10.0).fit(K_a_tr, yps)

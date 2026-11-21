@@ -55,7 +55,8 @@ def train_classifier(model, X_train, y_train, X_test, y_test, epochs: int = 20,
                      batch_size: int = 32, lr: float = 0.01, seed: int = 0,
                      eval_batch_size: int = 64, verbose: bool = True,
                      eval_train: bool = True, quantum_lr: float | None = None,
-                     weight_decay: float = 0.0, cosine_lr: bool = False) -> dict:
+                     weight_decay: float = 0.0, cosine_lr: bool = False,
+                     no_decay_modules: tuple[str, ...] = ("q",)) -> dict:
     """训练分类器。
 
     ``eval_train=False`` 时跳过每 epoch 在**训练集**上的全量 loss / acc 前向：
@@ -66,27 +67,39 @@ def train_classifier(model, X_train, y_train, X_test, y_test, epochs: int = 20,
 
     ``quantum_lr`` 不为 None 时，把模型 ``.q`` 子模块的参数单独分一组用该
     学习率，其余（CNN 前端 / pre_net / head / scale）用 ``lr``。
+    ``no_decay_modules`` 指定豁免 ``weight_decay`` 的子模块名，便于经典替身与量子层保持
+    完全一致的正则化分组。
     """
     set_seed(seed)
     Xtr, ytr = _as_float_tensor(X_train), _as_long_tensor(y_train)
     Xte, yte = _as_float_tensor(X_test), _as_long_tensor(y_test)
 
+    no_decay_ids: set[int] = set()
+    for mod_name in no_decay_modules:
+        sub = getattr(model, mod_name, None)
+        if sub is not None and hasattr(sub, "parameters"):
+            no_decay_ids.update(id(p) for p in sub.parameters())
+
     if quantum_lr is not None and getattr(model, "q", None) is not None:
         qids = {id(p) for p in model.q.parameters()}
         qparams = [p for p in model.parameters() if id(p) in qids]
-        cparams = [p for p in model.parameters() if id(p) not in qids]
-        opt = torch.optim.Adam(
-            [{"params": qparams, "lr": quantum_lr, "weight_decay": 0.0},
-             {"params": cparams, "lr": lr, "weight_decay": weight_decay}],
-        )
-    elif weight_decay > 0.0 and getattr(model, "q", None) is not None:
-        qids = {id(p) for p in model.q.parameters()}
-        qparams = [p for p in model.parameters() if id(p) in qids]
-        cparams = [p for p in model.parameters() if id(p) not in qids]
-        opt = torch.optim.Adam(
-            [{"params": qparams, "lr": lr, "weight_decay": 0.0},
-             {"params": cparams, "lr": lr, "weight_decay": weight_decay}],
-        )
+        cparams_nd = [p for p in model.parameters() if id(p) not in qids and id(p) in no_decay_ids]
+        cparams_wd = [p for p in model.parameters() if id(p) not in qids and id(p) not in no_decay_ids]
+        groups = [{"params": qparams, "lr": quantum_lr, "weight_decay": 0.0}]
+        if cparams_nd:
+            groups.append({"params": cparams_nd, "lr": lr, "weight_decay": 0.0})
+        if cparams_wd:
+            groups.append({"params": cparams_wd, "lr": lr, "weight_decay": weight_decay})
+        opt = torch.optim.Adam(groups)
+    elif weight_decay > 0.0 and no_decay_ids:
+        nd_params = [p for p in model.parameters() if id(p) in no_decay_ids]
+        wd_params = [p for p in model.parameters() if id(p) not in no_decay_ids]
+        groups = []
+        if nd_params:
+            groups.append({"params": nd_params, "lr": lr, "weight_decay": 0.0})
+        if wd_params:
+            groups.append({"params": wd_params, "lr": lr, "weight_decay": weight_decay})
+        opt = torch.optim.Adam(groups)
     else:
         opt = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
 

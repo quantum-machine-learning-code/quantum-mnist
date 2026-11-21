@@ -18,6 +18,8 @@ def n_quantum_params(n_qubits: int, n_layers: int, trainable_reupload: bool = Fa
 class _Float32VQC(nn.Module):
     """薄封装：统一输入/输出为 float32；cast 是可微算子，不破坏梯度图。"""
 
+    _is_quantum_module = True
+
     def __init__(self, layer: nn.Module, bound_inputs: bool = False):
         super().__init__()
         self.layer = layer  # 注册为子模块，参数可被 model.parameters() 收集
@@ -151,7 +153,7 @@ def make_observables(n_qubits: int, spec: str):
     规格按固定顺序展开，与 ``+`` 里的书写顺序无关；旧规格 ``"z"`` /
     ``"z+x+y+zz"`` 的展开顺序保持不变，以保证回归测试逐位一致。
     """
-    parts = [p.strip().lower() for p in spec.split("+")]
+    parts = [p.strip().lower() for p in spec.split("+") if p.strip()]
     unknown = [p for p in parts if p not in _READOUT_PARTS]
     if unknown:
         raise ValueError(f"未知可观测量 {unknown}，可选 {_READOUT_PARTS}")
@@ -182,6 +184,18 @@ def n_readout(n_qubits: int, spec: str) -> int:
     return len(make_observables(n_qubits, spec))
 
 
+def count_qwc_groups(n_qubits: int, spec: str) -> int:
+    """用 PennyLane 程序化计算可观测量集合的 QWC（qubit-wise commuting）测量基数量。
+
+    ``"z+x+y+zzall+xxall+yyall"`` 严格对称地仅包含同轴单比特与同轴两体项，
+    因此在任意比特数下均恒为 3 个 QWC 测量基（Z、X、Y）。
+    """
+    ops = make_observables(n_qubits, spec)
+    if not ops:
+        return 0
+    return len(qml.pauli.group_observables(ops, grouping_type="qwc"))
+
+
 def make_rich_layer(
     n_qubits: int = 10,
     n_layers: int = 2,
@@ -193,6 +207,7 @@ def make_rich_layer(
     init_std: float | None = None,
     diff_method: str = "backprop",
     shots: int | None = None,
+    bound_inputs: bool | None = None,
 ) -> nn.Module:
     """通用可变量子线路层：可配置编码、读出与数据重上传（含 Pérez-Salinas 可训练重上传）。
 
@@ -283,4 +298,107 @@ def make_rich_layer(
         elif init_std is not None:
             nn.init.normal_(layer.weights, mean=0.0, std=float(init_std))
 
-    return _Float32VQC(layer, bound_inputs=is_trainable_reup)
+    use_bound = is_trainable_reup if bound_inputs is None else bool(bound_inputs)
+    return _Float32VQC(layer, bound_inputs=use_bound)
+
+
+def evaluate_rich_layer_shots(
+    weights: torch.Tensor,
+    X,
+    n_qubits: int = 10,
+    encoding: str = "amplitude",
+    observables: str = "z+x+y+zz",
+    shots: int = 1000,
+    batch_size: int = 64,
+    seed: int = 0,
+) -> torch.Tensor:
+    """在真实有限 shots（QWC 分组采样）下前向评估训练好的量子线路期望值。
+
+    使用 PennyLane ``qml.set_shots`` + ``default.qubit(seed=seed)``，返回 ``(N, n_obs)`` float32 张量。
+    """
+    ops = make_observables(n_qubits, observables)
+    dev = qml.device("default.qubit", wires=n_qubits, seed=seed)
+
+    @qml.qnode(dev)
+    def _circ(inputs, w):
+        if encoding == "amplitude":
+            qml.AmplitudeEmbedding(inputs, wires=range(n_qubits), normalize=True, pad_with=0.0)
+        else:
+            qml.AngleEmbedding(inputs, wires=range(n_qubits), rotation="Y")
+        qml.StronglyEntanglingLayers(w, wires=range(n_qubits))
+        return [qml.expval(op) for op in ops]
+
+    qnode = qml.set_shots(_circ, shots=int(shots))
+    w_np = weights.detach().cpu().numpy()
+    X_np = X.detach().cpu().numpy() if torch.is_tensor(X) else X
+    chunks = []
+    for start in range(0, len(X_np), batch_size):
+        xb = X_np[start:start + batch_size]
+        import numpy as np
+
+        out = qnode(xb, w_np)
+        # PennyLane returns list of length n_obs, each shape (B,)
+        arr = torch.as_tensor(np.asarray(out, dtype=np.float32), dtype=torch.float32)
+        if arr.dim() == 1:
+            arr = arr.unsqueeze(0)
+        elif arr.shape[0] == len(ops) and arr.shape[1] == len(xb):
+            arr = arr.transpose(0, 1)
+        chunks.append(arr)
+    return torch.cat(chunks, dim=0).to(torch.float32)
+
+
+def iqp_feature_states(
+    X,
+    n_qubits: int,
+    alpha: float = 0.5,
+    reps: int = 2,
+) -> "torch.Tensor":
+    """用真实 PennyLane 纠缠 IQP / ZZFeatureMap 线路计算态向量矩阵 ``(N, 2**n_qubits)``。
+
+    每层依次施加 ``H``、``RZ(alpha * x_i)`` 与数据相关的两体纠缠相位
+    ``IsingZZ(alpha^2 * (pi - x_i) * (pi - x_j))``（近邻环 + 跨 2 连接），
+    在 ``reps >= 2`` 时形成非可分离纠缠态，不存在简单的经典闭合多项式或乘积核公式。
+    """
+    import numpy as np
+
+    X_np = np.asarray(X, dtype=np.float64)
+    if X_np.shape[1] != n_qubits:
+        raise ValueError(f"IQP 特征维 {X_np.shape[1]} 必须等于 n_qubits={n_qubits}")
+
+    dev = qml.device("default.qubit", wires=n_qubits)
+    pairs = [(i, (i + 1) % n_qubits) for i in range(n_qubits)]
+    if n_qubits >= 4:
+        pairs.extend((i, (i + 2) % n_qubits) for i in range(n_qubits))
+    # 去重并保持稳定顺序
+    seen = set()
+    uniq_pairs = []
+    for a, b in pairs:
+        e = (min(a, b), max(a, b))
+        if e[0] != e[1] and e not in seen:
+            seen.add(e)
+            uniq_pairs.append(e)
+
+    @qml.qnode(dev)
+    def _state_circ(x):
+        for _ in range(reps):
+            for i in range(n_qubits):
+                qml.Hadamard(wires=i)
+                qml.RZ(alpha * x[..., i], wires=i)
+            for i, j in uniq_pairs:
+                phi = (alpha ** 2) * (math.pi - x[..., i]) * (math.pi - x[..., j])
+                qml.IsingZZ(phi, wires=[i, j])
+        return qml.state()
+
+    # PennyLane default.qubit 原生支持 batch 广播计算态向量
+    states = np.asarray(_state_circ(X_np), dtype=np.complex128)
+    if states.ndim == 1:
+        states = states[None, :]
+    return states
+
+
+def iqp_kernel_matrix(states_a, states_b) -> "object":
+    """由真实量子态向量计算保真度核矩阵 ``K_ij = |<psi_a[i]|psi_b[j]>|^2``。"""
+    import numpy as np
+
+    overlap = np.asarray(states_a, dtype=np.complex128) @ np.asarray(states_b, dtype=np.complex128).conj().T
+    return np.real(overlap * overlap.conj())

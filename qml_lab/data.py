@@ -14,6 +14,7 @@ __all__ = [
     "load_mnist",
     "load_mnist_raw",
     "load_mnist_images",
+    "load_mnist_tvt",
     "fetch_mnist_raw",
     "l2_normalize",
     "stratified_subset",
@@ -220,7 +221,7 @@ def _apply_pca(Xtr, Xte, n_features, seed) -> tuple[np.ndarray, np.ndarray]:
 
 
 def _scale_to_pi(Xtr, Xte) -> tuple[np.ndarray, np.ndarray]:
-    """用训练集全局 min/max 把训练与测试一起缩放到 [-pi, pi] 并 clip。"""
+    """遗留缩放：用训练集全局标量 min/max 把训练与测试一起缩放到 [-pi, pi] 并 clip。"""
     lo = float(np.asarray(Xtr).min())
     hi = float(np.asarray(Xtr).max())
     if hi - lo < 1e-12:
@@ -232,6 +233,26 @@ def _scale_to_pi(Xtr, Xte) -> tuple[np.ndarray, np.ndarray]:
         return np.clip(Z, -np.pi, np.pi).astype(np.float32)
 
     return _s(Xtr), _s(Xte)
+
+
+def _standardize_per_pc_to_half_pi(
+    Xtr: np.ndarray, *others: np.ndarray
+) -> tuple[np.ndarray, ...]:
+    """逐主成分标准化并平滑映射到 (-pi/2, pi/2)：``tanh((x - mu) / std) * (pi / 2)``。
+
+    仅在训练集上估计每维均值与标准差，消除全局标量 min/max 造成的全主成分
+    系统性相位偏移（例如 MNIST PCA-10 下的 -0.815 rad）与高阶主成分幅值压缩。
+    """
+    A = np.asarray(Xtr, dtype=np.float32)
+    mu = A.mean(axis=0, keepdims=True)
+    sd = A.std(axis=0, keepdims=True)
+    sd = np.where(sd < 1e-6, 1.0, sd)
+
+    def _t(X):
+        Z = (np.asarray(X, dtype=np.float32) - mu) / sd
+        return np.ascontiguousarray(np.tanh(Z) * (np.pi / 2.0), dtype=np.float32)
+
+    return tuple(_t(arr) for arr in (A, *others))
 
 
 def _make_synthetic(counts_tr, counts_te, n_features, n_classes, seed) -> tuple:
@@ -255,11 +276,13 @@ def _make_synthetic(counts_tr, counts_te, n_features, n_classes, seed) -> tuple:
 
 
 def load_mnist(n_train=2000, n_test=500, n_features=4, classes=10,
-               source="auto", data_dir="data", seed=0) -> tuple:
+               source="auto", data_dir="data", seed=0,
+               standardize_per_pc: bool = False) -> tuple:
     """加载 MNIST 子集，返回 (X_train, y_train, X_test, y_test, meta)。
 
-    X_* 为 float32、shape (N, n_features)、取值 [-pi, pi]；y_* 为 int64、标签 0..C-1。
-    source='auto' 依次尝试 torchvision -> openml -> synthetic，绝不抛异常。
+    默认 ``standardize_per_pc=False`` 保持遗留脚本逐位兼容（全局 min/max 到 ``[-pi, pi]``）；
+    设 ``standardize_per_pc=True`` 时改为逐主成分标准化 + ``tanh(z) * (pi/2)``，
+    消除跨主成分的相位偏移与幅值压缩。
     """
     n_features = max(1, int(n_features))
     if isinstance(classes, (int, np.integer)):
@@ -302,7 +325,12 @@ def load_mnist(n_train=2000, n_test=500, n_features=4, classes=10,
         print("[data] using synthetic data (offline smoke test only)")
         Xtr, ytr, Xte, yte = _make_synthetic(counts_tr, counts_te, n_features, C, seed)
 
-    Xtr, Xte = _scale_to_pi(Xtr, Xte)
+    if standardize_per_pc:
+        Xtr, Xte = _standardize_per_pc_to_half_pi(Xtr, Xte)
+        scale_note = "per-PC standardized -> tanh(z)*(pi/2)"
+    else:
+        Xtr, Xte = _scale_to_pi(Xtr, Xte)
+        scale_note = "scaled to [-pi, pi]"
     Xtr = np.ascontiguousarray(Xtr, dtype=np.float32)
     Xte = np.ascontiguousarray(Xte, dtype=np.float32)
     ytr = np.ascontiguousarray(ytr, dtype=np.int64)
@@ -313,7 +341,7 @@ def load_mnist(n_train=2000, n_test=500, n_features=4, classes=10,
     else:
         note = (
             f"real MNIST via {used}; balanced sampling; "
-            f"PCA({n_features}) fit on train only; scaled to [-pi, pi]"
+            f"PCA({n_features}) fit on train only; {scale_note}"
         )
     meta = {
         "source": used,
@@ -325,6 +353,7 @@ def load_mnist(n_train=2000, n_test=500, n_features=4, classes=10,
         "n_test": int(Xte.shape[0]),
         "seed": int(seed),
         "pca": used != "synthetic",
+        "standardize_per_pc": bool(standardize_per_pc),
         "fallback_reasons": reasons,
     }
     return Xtr, ytr, Xte, yte, meta
@@ -446,3 +475,121 @@ def load_mnist_raw(n_train=600, n_test=200, classes=10,
         "fallback_reasons": reasons,
     }
     return Xtr, ytr, Xte, yte, meta
+
+
+def load_mnist_tvt(
+    n_train: int = 600,
+    n_val: int = 200,
+    n_test: int = 400,
+    classes=10,
+    source: str = "idx",
+    data_dir: str = "data",
+    seed: int = 0,
+    pca_dims: tuple[int, ...] = (),
+) -> dict:
+    """严格不重叠的分层 Train / Val / Test 切分（杜绝测试集泄露）。
+
+    * ``Train`` 与 ``Val`` 从官方训练集池无放回分层抽取、严格互不相交；
+    * ``Test`` 从官方测试集池无放回分层抽取，仅用于最终一次性评估；
+    * 可同时计算多种输入视图：2D 图像 ``[0,1]``、784 维 L2 归一化向量、以及按
+      ``pca_dims`` 仅在 ``Train`` 上拟合的逐主成分标准化 ``tanh(z)*(pi/2)`` PCA 特征。
+    """
+    from sklearn.decomposition import PCA
+
+    if isinstance(classes, (int, np.integer)):
+        class_ids = list(range(int(classes)))
+    else:
+        class_ids = [int(c) for c in classes]
+    C = len(class_ids) or 1
+    counts_tv = _split_counts(int(n_train) + int(n_val), C)
+    counts_tr = _split_counts(int(n_train), C)
+    counts_te = _split_counts(int(n_test), C)
+
+    src = _normalize_source(source)
+    chain = ["idx", "torchvision", "openml"] if src == "auto" else (
+        ["idx"] if src == "idx" else ([] if src == "synthetic" else [src]))
+
+    X_tv = y_tv = X_te_raw = y_te = None
+    used = "synthetic"
+    reasons: list[str] = []
+    for candidate in chain:
+        try:
+            Xr, yr, Xe, ye = _fetch_raw(candidate, data_dir)
+            rng = np.random.default_rng(seed)
+            X_tv, y_tv = _select(Xr, yr, counts_tv, class_ids, rng)
+            X_te_raw, y_te = _select(Xe, ye, counts_te, class_ids, rng)
+            used = candidate
+            break
+        except Exception as e:
+            reasons.append(f"{candidate}: {type(e).__name__}: {e}")
+
+    if used == "synthetic":
+        X_tv, y_tv, X_te_raw, y_te = _make_synthetic(counts_tv, counts_te, 784, C, seed)
+
+    # _select 按类别顺序拼接，因此按每类前 counts_tr[c] 与剩余部分切分保证严格不相交且类别均衡
+    tr_idx, val_idx = [], []
+    offset = 0
+    for c_tot, c_tr in zip(counts_tv, counts_tr):
+        tr_idx.append(np.arange(offset, offset + c_tr))
+        val_idx.append(np.arange(offset + c_tr, offset + c_tot))
+        offset += c_tot
+    tr_idx = np.concatenate(tr_idx)
+    val_idx = np.concatenate(val_idx)
+
+    X_tr_raw, y_tr = np.ascontiguousarray(X_tv[tr_idx]), np.ascontiguousarray(y_tv[tr_idx], dtype=np.int64)
+    X_val_raw, y_val = np.ascontiguousarray(X_tv[val_idx]), np.ascontiguousarray(y_tv[val_idx], dtype=np.int64)
+    X_te_raw = np.ascontiguousarray(X_te_raw)
+    y_te = np.ascontiguousarray(y_te, dtype=np.int64)
+
+    def _to_img(X):
+        A = np.asarray(X, dtype=np.float32) / (255.0 if used != "synthetic" else 1.0)
+        return np.ascontiguousarray(A.reshape(-1, 1, 28, 28), dtype=np.float32)
+
+    out = {
+        "y_train": y_tr,
+        "y_val": y_val,
+        "y_test": y_te,
+        "raw": {
+            "X_train": l2_normalize(X_tr_raw),
+            "X_val": l2_normalize(X_val_raw),
+            "X_test": l2_normalize(X_te_raw),
+        },
+        "img": {
+            "X_train": _to_img(X_tr_raw),
+            "X_val": _to_img(X_val_raw),
+            "X_test": _to_img(X_te_raw),
+        },
+        "pca": {},
+        "meta": {
+            "source": used,
+            "n_classes": C,
+            "n_train": int(len(y_tr)),
+            "n_val": int(len(y_val)),
+            "n_test": int(len(y_te)),
+            "seed": int(seed),
+            "disjoint_train_val_test": True,
+            "fallback_reasons": reasons,
+        },
+    }
+
+    for k in pca_dims:
+        k_eff = min(int(k), X_tr_raw.shape[0], X_tr_raw.shape[1])
+        pca = PCA(n_components=k_eff, random_state=seed)
+        Atr = pca.fit_transform(X_tr_raw).astype(np.float32)
+        Ava = pca.transform(X_val_raw).astype(np.float32)
+        Ate = pca.transform(X_te_raw).astype(np.float32)
+        if k_eff < int(k):
+            pad = int(k) - k_eff
+            Atr = np.pad(Atr, ((0, 0), (0, pad)))
+            Ava = np.pad(Ava, ((0, 0), (0, pad)))
+            Ate = np.pad(Ate, ((0, 0), (0, pad)))
+        Atr_s, Ava_s, Ate_s = _standardize_per_pc_to_half_pi(Atr, Ava, Ate)
+        # PCA 拟合参数量：均值向量 784 + 投影矩阵 k_eff * 784 (+ 逐主成分标准化均值/方差 2*k)
+        pca_fitted = int(X_tr_raw.shape[1] + k_eff * X_tr_raw.shape[1])
+        out["pca"][int(k)] = {
+            "X_train": Atr_s,
+            "X_val": Ava_s,
+            "X_test": Ate_s,
+            "preprocessing_fitted_params": pca_fitted,
+        }
+    return out

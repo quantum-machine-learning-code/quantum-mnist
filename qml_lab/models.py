@@ -9,10 +9,121 @@ from torch.nn import functional as F
 
 try:
     from .quantum import (make_amplitude_layer, make_rich_layer,
-                          make_vqc_layer, n_readout)
+                          make_vqc_layer, n_quantum_params, n_readout)
 except ImportError:
     from quantum import (make_amplitude_layer, make_rich_layer,
-                         make_vqc_layer, n_readout)
+                         make_vqc_layer, n_quantum_params, n_readout)
+
+
+def parameter_breakdown(model: nn.Module, preprocessing_params: int = 0) -> dict:
+    """显式拆解模型的量子参数、经典封装参数与离线预处理拟合参数（如 PCA）。
+
+    任何标记 ``_is_quantum_module = True`` 的子模块（或 ``model.q``）内的参数均计入
+    ``quantum_params``；其余模型参数计入 ``classical_wrapper_params``；
+    ``preprocessing_params`` 显式记录 PCA（``784 + k*784``）等未计入 PyTorch 模块的拟合参数。
+    """
+    q_ids: set[int] = set()
+    for mod in model.modules():
+        if getattr(mod, "_is_quantum_module", False):
+            for p in mod.parameters():
+                q_ids.add(id(p))
+    q_sub = getattr(model, "q", None)
+    if q_sub is not None and isinstance(q_sub, nn.Module):
+        for p in q_sub.parameters():
+            q_ids.add(id(p))
+
+    seen: set[int] = set()
+    q_params = 0
+    total_params = 0
+    for p in model.parameters():
+        pid = id(p)
+        if pid in seen:
+            continue
+        seen.add(pid)
+        n = int(p.numel())
+        total_params += n
+        if pid in q_ids:
+            q_params += n
+
+    c_params = total_params - q_params
+    prep = int(preprocessing_params)
+    return {
+        "total_model_params": total_params,
+        "quantum_params": q_params,
+        "classical_wrapper_params": c_params,
+        "preprocessing_fitted_params": prep,
+        "effective_total_params": total_params + prep,
+        "quantum_param_share": round(q_params / total_params, 6) if total_params else 0.0,
+    }
+
+
+def assert_matched_config(
+    cfg_a: dict,
+    cfg_b: dict,
+    keys: tuple[str, ...],
+    label_a: str = "A",
+    label_b: str = "B",
+) -> None:
+    """受控实验契约断言：确认两个对照臂在全部指定控制变量上完全一致。"""
+    mismatches = []
+    for k in keys:
+        if k not in cfg_a or k not in cfg_b:
+            mismatches.append(f"{k}: missing ({k in cfg_a} vs {k in cfg_b})")
+        elif cfg_a[k] != cfg_b[k]:
+            mismatches.append(f"{k}: {label_a}={cfg_a[k]!r} != {label_b}={cfg_b[k]!r}")
+    if mismatches:
+        raise AssertionError(
+            f"受控变量不匹配（{label_a} vs {label_b}）：" + "; ".join(mismatches)
+        )
+
+
+class _ButterflyGivens(nn.Module):
+    """固定维度上的纯正交 Givens 旋转混合层，对任意正整数 ``n_params`` 精确控制参数量。"""
+
+    def __init__(self, dim: int, n_params: int):
+        super().__init__()
+        if dim < 2:
+            raise ValueError(f"dim 必须 >= 2，实际 {dim}")
+        pairs_per_layer = dim // 2
+        self.dim = int(dim)
+        self.n_params = int(n_params)
+        self.angles = nn.Parameter(torch.randn(self.n_params) * 0.1)
+        layer_specs: list[tuple[int, int]] = []
+        idx_a_list: list[list[int]] = []
+        idx_b_list: list[list[int]] = []
+        rem = self.n_params
+        layer_i = 0
+        offset = 0
+        while rem > 0:
+            take = min(pairs_per_layer, rem)
+            shift = layer_i % dim
+            order = [(i + shift) % dim for i in range(dim)]
+            idx_a_list.append(order[0:2 * take:2])
+            idx_b_list.append(order[1:2 * take:2])
+            layer_specs.append((offset, offset + take))
+            offset += take
+            rem -= take
+            layer_i += 1
+        self._layer_specs = layer_specs
+        for i, (ia, ib) in enumerate(zip(idx_a_list, idx_b_list)):
+            self.register_buffer(f"idx_a_{i}", torch.tensor(ia, dtype=torch.long))
+            self.register_buffer(f"idx_b_{i}", torch.tensor(ib, dtype=torch.long))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        h = x
+        for i, (lo, hi) in enumerate(self._layer_specs):
+            ia = getattr(self, f"idx_a_{i}")
+            ib = getattr(self, f"idx_b_{i}")
+            ang = self.angles[lo:hi]
+            c = torch.cos(ang)
+            s = torch.sin(ang)
+            xa = h[..., ia]
+            xb = h[..., ib]
+            out = h.clone()
+            out[..., ia] = c * xa - s * xb
+            out[..., ib] = s * xa + c * xb
+            h = out
+        return h
 
 
 def _build_head(n_in: int, n_classes: int, head: str, hidden: int) -> nn.Module:
@@ -156,7 +267,12 @@ class RichVQCClassifier(nn.Module):
         self.head = _build_head(self.readout_dim, n_classes, head, hidden)
         _set_scale(self, scale)
         self.norm_bn = nn.BatchNorm1d(1) if self.preserve_norm else None
-        self.post_ln = nn.BatchNorm1d(self.readout_dim) if post_norm else None
+        self.post_bn = nn.BatchNorm1d(self.readout_dim) if post_norm else None
+
+    @property
+    def post_ln(self) -> nn.Module | None:
+        """向后兼容别名；实际模块为 ``BatchNorm1d``（详见 ``post_bn``）。"""
+        return self.post_bn
 
     def quantum_features(self, x: torch.Tensor) -> torch.Tensor:
         """提取量子读出向量（若 ``preserve_norm=True`` 则含标准化后的样本范数列）。"""
@@ -178,8 +294,8 @@ class RichVQCClassifier(nn.Module):
             z = torch.cat([z_q, n_feat], dim=-1)
         else:
             z = self.q(x).to(torch.float32)
-        if self.post_ln is not None and (z.shape[0] > 1 or not self.training):
-            z = self.post_ln(z)
+        if self.post_bn is not None and (z.shape[0] > 1 or not self.training):
+            z = self.post_bn(z)
         return z
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -429,6 +545,7 @@ class HybridRichClassifier(HybridCNNClassifier):
         trainable_reupload: bool = False,
         stabilize: bool = False,
         init_std: float | None = None,
+        match_readout_dim: bool = False,
     ):
         # 不调用 super().__init__()：量子层与 head 维度都要按新规格重建
         nn.Module.__init__(self)
@@ -446,16 +563,55 @@ class HybridRichClassifier(HybridCNNClassifier):
             self.pre_net = nn.Sequential(nn.Linear(width, n_qubits), nn.Tanh())
             eff_init_std = init_std
 
+        # pre_features 已做 Tanh() * (pi/2) 有界映射，因此显式传 bound_inputs=False
+        # 避免与 trainable_reupload 叠加产生 tanh(tanh(u)) 双重压缩
         self.q = (make_rich_layer(
             n_qubits=n_qubits, n_layers=n_layers, encoding="angle",
             observables=observables, reupload=reupload,
             trainable_reupload=trainable_reupload, init_std=eff_init_std,
-            diff_method=diff_method) if quantum else None)
-        dim = (n_readout(n_qubits, observables) if quantum else n_qubits)
+            diff_method=diff_method, bound_inputs=False) if quantum else None)
+
+        target_dim = n_readout(n_qubits, observables)
+        self.classical_bridge: nn.Module | None = None
+        if quantum:
+            dim = target_dim
+        elif match_readout_dim and target_dim != n_qubits:
+            dim = target_dim
+            # 等宽且近似等参的经典桥接层：固定随机正交展开(0参数) + 等参数量 Givens 旋转
+            q_equiv = n_quantum_params(
+                n_qubits, n_layers,
+                trainable_reupload=bool(trainable_reupload) or (
+                    isinstance(reupload, str) and reupload.strip().lower() == "trainable"
+                ),
+            )
+            proj = torch.randn(n_qubits, dim) / math.sqrt(n_qubits)
+            self.register_buffer("_bridge_proj", proj)
+            self.classical_bridge = _ButterflyGivens(dim, q_equiv)
+        else:
+            dim = n_qubits
+            self._bridge_proj = None
+
         self.readout_dim = dim
-        self.post_norm = nn.BatchNorm1d(dim) if (self.stabilize and quantum) else None
+        # 修复：quantum=False 且 stabilize=True 时必须保留 post_norm，否则经典对照缺失 BN
+        self.post_norm = nn.BatchNorm1d(dim) if self.stabilize else None
         self.head = _build_head(dim, n_classes, head, hidden)
         _set_scale(self, scale)
+
+    def quantum_features(self, x: torch.Tensor) -> torch.Tensor:
+        """提取读出特征向量；``quantum=False`` 时走等宽/等 BN 的经典对照路径。"""
+        f = self.pre_features(x)
+        if self.q is not None:
+            z = self.q(f).to(torch.float32)
+        elif self.classical_bridge is not None:
+            if getattr(self, "_bridge_proj", None) is not None:
+                z = torch.tanh(self.classical_bridge(f @ self._bridge_proj))
+            else:
+                z = torch.tanh(self.classical_bridge(f))
+        else:
+            z = f
+        if self.post_norm is not None and (z.shape[0] > 1 or not self.training):
+            z = self.post_norm(z)
+        return z
 
     def pre_features(self, x: torch.Tensor) -> torch.Tensor:
         """前端输出，乘 π/2 后落在 [-π/2, π/2]；单样本训练步自动跳过 BatchNorm1d。"""
@@ -471,3 +627,224 @@ class HybridRichClassifier(HybridCNNClassifier):
         else:
             f = self.pre_net(h)
         return f * math.pi / 2.0
+
+
+class RandomQuadraticClassifier(nn.Module):
+    """Regime I 去量子化对照：0 个学习投影参数的满秩随机齐次二次型 + 与 RichVQC 完全相同的头。
+
+    使用 3 组固定随机正交基 ``Q_b in O(d)``（对应 Z/X/Y 3 个 QWC 测量基）与固定随机 ``±1`` 符号向量
+    ``s_j in {-1, +1}^d`` 计算 ``z_j(x) = sum_i s_{j,i} (Q_{b(j)} x)_i^2 = x^T (Q^T diag(s_j) Q) x``：
+    与振幅编码 VQC 的 ``<x|U† P_j U|x>`` 严格同属特征值 ``±1``、取值 ``[-1, 1]`` 的满秩齐次二次型函数类，
+    且无任何数据拟合投影参数。
+    """
+
+    def __init__(
+        self,
+        n_features: int = 784,
+        readout_dim: int = 40,
+        n_classes: int = 10,
+        n_bases: int = 3,
+        head: str = "mlp",
+        scale=5.0,
+        hidden: int = 32,
+    ):
+        super().__init__()
+        self.n_features = int(n_features)
+        self.readout_dim = int(readout_dim)
+        self.n_bases = int(n_bases)
+        # 3 组固定随机正交变换 + 固定随机 ±1 符号掩码（buffer，0 个可训练参数）
+        bases = []
+        for _ in range(self.n_bases):
+            q_mat, _ = torch.linalg.qr(torch.randn(self.n_features, self.n_features))
+            bases.append(q_mat.to(torch.float32))
+        self.register_buffer("orth_bases", torch.stack(bases, dim=0))  # (B_g, d, d)
+        signs = torch.where(
+            torch.rand(self.readout_dim, self.n_features) < 0.5,
+            torch.ones(self.readout_dim, self.n_features),
+            -torch.ones(self.readout_dim, self.n_features),
+        )
+        self.register_buffer("signs", signs.to(torch.float32))
+        self.register_buffer(
+            "basis_idx",
+            torch.arange(self.readout_dim, dtype=torch.long) % self.n_bases,
+        )
+        self.head = _build_head(self.readout_dim, n_classes, head, hidden)
+        _set_scale(self, scale)
+
+    def features(self, x: torch.Tensor) -> torch.Tensor:
+        x = x.to(torch.float32)
+        if x.dim() > 2:
+            x = x.reshape(x.shape[0], -1)
+        # 按 3 个正交基分别计算 (Q_b x)^2，再用 ±1 掩码收缩成 [-1, 1] 内的二次型期望
+        outs = []
+        for b_i in range(self.n_bases):
+            mask = self.basis_idx == b_i
+            if not mask.any():
+                continue
+            rot_sq = (x @ self.orth_bases[b_i]).pow(2)  # (N, d)
+            outs.append((mask, rot_sq @ self.signs[mask].T))
+        z = torch.empty(x.shape[0], self.readout_dim, dtype=torch.float32, device=x.device)
+        for mask, val in outs:
+            z[:, mask] = val
+        return z
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.head(self.features(x) * self.out_scale)
+
+
+class PatchLowRankClassifier(nn.Module):
+    """Regime I 严格等参对照：与 PatchVQCClassifier 封装逐项一致，仅将 48 参数 8q 线路
+    替换为 48 个可训练参数的经典局部 patch 滤波器（固定零参随机展开 + 48 参数 Givens 正交混合）。
+    """
+
+    def __init__(
+        self,
+        patch_size: int = 14,
+        stride: int = 7,
+        image_size: int = 28,
+        n_classes: int = 10,
+        per_patch_out: int = 32,
+        filter_params: int = 48,
+        preserve_patch_norm: bool = True,
+        head: str = "mlp",
+        scale=1.0,
+        hidden: int = 64,
+        dropout: float = 0.1,
+    ):
+        super().__init__()
+        self.image_size = int(image_size)
+        self.patch_size = int(patch_size)
+        self.stride = int(stride)
+        self.patch_dim = self.patch_size * self.patch_size
+        self.grid_size = (self.image_size - self.patch_size) // self.stride + 1
+        self.n_patches = self.grid_size * self.grid_size
+        self.per_patch_out = int(per_patch_out)
+        self.preserve_patch_norm = bool(preserve_patch_norm)
+
+        # 固定零参正交基（对应振幅编码 0 参数展开）
+        q_mat, _ = torch.linalg.qr(torch.randn(self.patch_dim, self.per_patch_out))
+        self.register_buffer("fixed_basis", q_mat.to(torch.float32))
+        self.filter = _ButterflyGivens(self.per_patch_out, filter_params)
+
+        per_patch = self.per_patch_out + (1 if self.preserve_patch_norm else 0)
+        self.readout_dim = self.n_patches * per_patch
+        self.post_norm = nn.BatchNorm1d(self.readout_dim)
+        self.drop = nn.Dropout(dropout) if dropout > 0 else nn.Identity()
+        self.head = _build_head(self.readout_dim, n_classes, head, hidden)
+        _set_scale(self, scale)
+
+    def features(self, x: torch.Tensor) -> torch.Tensor:
+        img = x.to(torch.float32)
+        side = self.image_size
+        if img.dim() == 2 and img.shape[1] == side * side:
+            img = img.view(-1, 1, side, side)
+        B = img.shape[0]
+        patches = F.unfold(img, kernel_size=self.patch_size, stride=self.stride).transpose(1, 2)
+        p_norm = patches.norm(dim=-1, keepdim=True)
+        safe = patches.clone()
+        zero_mask = p_norm.squeeze(-1) < 1e-6
+        if zero_mask.any():
+            safe[zero_mask, 0] = 1.0
+        unit = safe / safe.norm(dim=-1, keepdim=True).clamp_min(1e-12)
+        flat_u = unit.reshape(B * self.n_patches, self.patch_dim)
+        h = torch.tanh(self.filter(flat_u @ self.fixed_basis) * math.sqrt(self.patch_dim / self.per_patch_out))
+        h = h.reshape(B, self.n_patches, self.per_patch_out)
+        rel_norm = p_norm / p_norm.mean(dim=1, keepdim=True).clamp_min(1e-6)
+        hw = h * rel_norm
+        feat = torch.cat([hw, p_norm], dim=-1) if self.preserve_patch_norm else hw
+        flat_feat = feat.reshape(B, self.readout_dim)
+        if B > 1 or not self.training:
+            flat_feat = self.post_norm(flat_feat)
+        return flat_feat
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.head(self.drop(self.features(x) * self.out_scale))
+
+
+class _QuantumReuploadCore(nn.Module):
+    """纯量子 Pérez-Salinas 深度重上传线路内核（零经典 MLP 封装，纯 Born 概率读出）。"""
+
+    _is_quantum_module = True
+
+    def __init__(self, n_qubits: int = 4, n_layers: int = 6):
+        super().__init__()
+        import pennylane as qml
+
+        self.n_qubits = int(n_qubits)
+        self.n_layers = int(n_layers)
+        self.in_features = 3 * self.n_qubits
+        dev = qml.device("default.qubit", wires=self.n_qubits)
+
+        def circuit(inputs, in_scale, in_shift):
+            for layer_i in range(self.n_layers):
+                for q in range(self.n_qubits):
+                    phi = inputs[..., 3 * q] * in_scale[layer_i, q, 0] + in_shift[layer_i, q, 0]
+                    theta = inputs[..., 3 * q + 1] * in_scale[layer_i, q, 1] + in_shift[layer_i, q, 1]
+                    omega = inputs[..., 3 * q + 2] * in_scale[layer_i, q, 2] + in_shift[layer_i, q, 2]
+                    qml.Rot(phi, theta, omega, wires=q)
+                for q in range(self.n_qubits):
+                    qml.CNOT(wires=[q, (q + 1) % self.n_qubits])
+            return qml.probs(wires=range(self.n_qubits))
+
+        weight_shapes = {
+            "in_scale": (self.n_layers, self.n_qubits, 3),
+            "in_shift": (self.n_layers, self.n_qubits, 3),
+        }
+        qnode = qml.qnode(dev, diff_method="backprop")(circuit)
+        self.layer = qml.qnn.TorchLayer(qnode, weight_shapes).to(torch.float32)
+        with torch.no_grad():
+            nn.init.normal_(self.layer.in_scale, mean=0.0, std=0.25)
+            nn.init.normal_(self.layer.in_shift, mean=0.0, std=0.1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        probs = self.layer(x.to(torch.float32)).to(torch.float32)
+        if probs.dim() == 2 and probs.shape[0] != x.shape[0] and probs.shape[1] == x.shape[0]:
+            probs = probs.transpose(0, 1)
+        return probs
+
+
+class DataReuploadingFidelityClassifier(nn.Module):
+    """Regime III 量子原生分类器（无经典 MLP 封装）：深度 Pérez-Salinas 重上传 + 纯 Born 规则读出。
+
+    在 ``n_qubits=4``（``2^4=16 >= 10`` 类）上每层用通用 SU(2) 门 ``Rot(w*x + b)``
+    重上传 ``3*n_qubits=12`` 维特征并施加环状 CNOT 纠缠；直接取前 ``n_classes`` 个正交计算基态
+    的 Born 概率 ``p_c(x) = |<c|psi_theta(x)>|^2`` 计算对数概率 logits（0 个经典参数）。
+    """
+
+    def __init__(self, n_qubits: int = 4, n_layers: int = 4, n_classes: int = 10):
+        super().__init__()
+        if 2 ** n_qubits < n_classes:
+            raise ValueError(f"2**{n_qubits} < n_classes={n_classes}")
+        self.n_qubits = int(n_qubits)
+        self.n_layers = int(n_layers)
+        self.n_classes = int(n_classes)
+        self.q = _QuantumReuploadCore(n_qubits=n_qubits, n_layers=n_layers)
+        self.readout_dim = int(n_classes)
+
+    def born_probs(self, x: torch.Tensor) -> torch.Tensor:
+        """返回完整 ``2^n`` 维 Born 概率分布（归一化，和为 1）。"""
+        return self.q(x)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        probs = self.born_probs(x)[:, :self.n_classes]
+        return torch.log(probs.clamp_min(1e-7))
+
+
+class ClassicalTrigNet(nn.Module):
+    """Regime I 匹配对照：与深度数据重上传等参数量、等三角傅里叶函数类的经典网络。"""
+
+    def __init__(
+        self,
+        n_features: int = 12,
+        n_classes: int = 10,
+        n_freqs: int = 3,
+        bias: bool = False,
+    ):
+        super().__init__()
+        self.freq = nn.Linear(n_features, n_freqs, bias=bias)
+        self.head = nn.Linear(2 * n_freqs, n_classes, bias=bias)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        ang = self.freq(x.to(torch.float32))
+        feat = torch.cat([torch.cos(ang), torch.sin(ang)], dim=-1)
+        return self.head(feat)
