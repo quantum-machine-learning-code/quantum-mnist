@@ -1,0 +1,3045 @@
+{
+  "purpose": "严格受控三范式基准：Track A（MNIST 经典数据）+ Track B（1D Cluster-Ising 原生量子态 SPT 相分类）",
+  "protocol": {
+    "disjoint_train_val_test": true,
+    "zero_test_peeking": true,
+    "unified_seed_semantics": "All models (neural, VQC, kernel, QCNN) share identical independent stratified Train/Val/Test split per seed",
+    "multiple_testing_correction": "Holm-Bonferroni (two-sided paired Student-t, alpha=0.05)",
+    "qwc_verification": {
+      "amp10_40d_qwc_groups": 3,
+      "amp10_165d_qwc_groups": 3,
+      "qcnn_final_wire_qwc_groups": 1
+    },
+    "matched_assertions_seed0": [
+      "A1: vqc_amp_matched == classical_random_quad",
+      "A2: patch_vqc_matched == classical_patch_lowrank (exact 20364 params, batch=64)",
+      "A3: hybrid_vqc_matched == hybrid_noq_matched (exact 5162 params, stabilize+BN)",
+      "A4: qnative_reupload_fidelity (96q/0c) vs classical_trig_net (96c)",
+      "A5: qnative_iqp_kernel == classical_rbf_pca6 == classical_poly2_pca6 (same PCA-6, Val-tuned)"
+    ],
+    "physics_boundary_note": "Single-copy AmplitudeEmbedding + CPTP QCNN cannot escape homogeneous quadraticity on classical data; on native 1D Cluster-Ising SPT states |psi>, QCNN extracts nonlocal string order directly with 0 classical MLP params and 1 QWC basis."
+  },
+  "config": {
+    "seeds": "0,1,2,3,4",
+    "n_train": 600,
+    "n_val": 200,
+    "n_test": 400,
+    "classes": 10,
+    "layers": 2,
+    "amp_qubits": 10,
+    "hybrid_qubits": 8,
+    "reup_qubits": 4,
+    "reup_layers": 4,
+    "iqp_qubits": 6,
+    "epochs_amp": 20,
+    "epochs_patch": 20,
+    "epochs_hyb": 20,
+    "epochs_reup": 25,
+    "spt_qubits": 8,
+    "spt_train": 120,
+    "spt_val": 60,
+    "spt_test": 120,
+    "epochs_qcnn": 25,
+    "data_source": "idx",
+    "data_dir": "data",
+    "workers": 5,
+    "torch_threads": 2,
+    "out": "results",
+    "archive": "docs/three_regimes_metrics.json"
+  },
+  "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "track_a_mnist": {
+    "summary": {
+      "classical_random_quad": {
+        "regime": "I_classical",
+        "params": {
+          "total_model_params": 1642,
+          "quantum_params": 0,
+          "classical_wrapper_params": 1642,
+          "preprocessing_fitted_params": 0,
+          "effective_total_params": 1642,
+          "quantum_param_share": 0.0
+        },
+        "qwc_groups": 0,
+        "test_acc": {
+          "mean": 0.6515,
+          "std": 0.0516,
+          "min": 0.5725,
+          "max": 0.7075,
+          "values": [
+            0.6325,
+            0.675,
+            0.67,
+            0.5725,
+            0.7075
+          ],
+          "n": 5
+        },
+        "val_acc": {
+          "mean": 0.667,
+          "std": 0.0329,
+          "min": 0.63,
+          "max": 0.7,
+          "values": [
+            0.695,
+            0.635,
+            0.63,
+            0.675,
+            0.7
+          ],
+          "n": 5
+        },
+        "seconds": {
+          "mean": 2.94,
+          "std": 0.043,
+          "min": 2.9,
+          "max": 3.01,
+          "values": [
+            2.91,
+            3.01,
+            2.94,
+            2.94,
+            2.9
+          ],
+          "n": 5
+        }
+      },
+      "vqc_amp_matched": {
+        "regime": "II_classical_on_quantum",
+        "params": {
+          "total_model_params": 1702,
+          "quantum_params": 60,
+          "classical_wrapper_params": 1642,
+          "preprocessing_fitted_params": 0,
+          "effective_total_params": 1702,
+          "quantum_param_share": 0.035253
+        },
+        "qwc_groups": 3,
+        "test_acc": {
+          "mean": 0.776,
+          "std": 0.0314,
+          "min": 0.73,
+          "max": 0.8075,
+          "values": [
+            0.8075,
+            0.775,
+            0.8025,
+            0.73,
+            0.765
+          ],
+          "n": 5
+        },
+        "val_acc": {
+          "mean": 0.794,
+          "std": 0.0315,
+          "min": 0.76,
+          "max": 0.83,
+          "values": [
+            0.825,
+            0.76,
+            0.83,
+            0.775,
+            0.78
+          ],
+          "n": 5
+        },
+        "seconds": {
+          "mean": 93.142,
+          "std": 0.6636,
+          "min": 92.36,
+          "max": 94.2,
+          "values": [
+            93.0,
+            92.36,
+            93.05,
+            94.2,
+            93.1
+          ],
+          "n": 5
+        },
+        "test_acc_shots_200": {
+          "mean": 0.409,
+          "std": 0.0215,
+          "min": 0.3925,
+          "max": 0.4325,
+          "values": [
+            0.395,
+            0.3925,
+            0.4325,
+            0.4325,
+            0.3925
+          ],
+          "n": 5
+        },
+        "test_acc_shots_1000": {
+          "mean": 0.636,
+          "std": 0.0223,
+          "min": 0.605,
+          "max": 0.6675,
+          "values": [
+            0.64,
+            0.605,
+            0.6675,
+            0.635,
+            0.6325
+          ],
+          "n": 5
+        }
+      },
+      "classical_poly2_unscaled": {
+        "regime": "I_classical",
+        "params": {
+          "total_model_params": 0,
+          "quantum_params": 0,
+          "classical_wrapper_params": 0,
+          "preprocessing_fitted_params": 0,
+          "effective_total_params": 0,
+          "quantum_param_share": 0.0
+        },
+        "qwc_groups": 0,
+        "test_acc": {
+          "mean": 0.9155,
+          "std": 0.0124,
+          "min": 0.8975,
+          "max": 0.925,
+          "values": [
+            0.9075,
+            0.925,
+            0.9225,
+            0.8975,
+            0.925
+          ],
+          "n": 5
+        },
+        "val_acc": {
+          "mean": 0.906,
+          "std": 0.0182,
+          "min": 0.88,
+          "max": 0.93,
+          "values": [
+            0.9,
+            0.91,
+            0.91,
+            0.88,
+            0.93
+          ],
+          "n": 5
+        },
+        "seconds": {
+          "mean": 1.0328,
+          "std": 0.2158,
+          "min": 0.853,
+          "max": 1.378,
+          "values": [
+            0.853,
+            1.378,
+            1.087,
+            0.861,
+            0.985
+          ],
+          "n": 5
+        }
+      },
+      "classical_patch_lowrank": {
+        "regime": "I_classical",
+        "params": {
+          "total_model_params": 20364,
+          "quantum_params": 0,
+          "classical_wrapper_params": 20364,
+          "preprocessing_fitted_params": 0,
+          "effective_total_params": 20364,
+          "quantum_param_share": 0.0
+        },
+        "qwc_groups": 0,
+        "test_acc": {
+          "mean": 0.8715,
+          "std": 0.0157,
+          "min": 0.855,
+          "max": 0.8975,
+          "values": [
+            0.8675,
+            0.87,
+            0.8675,
+            0.855,
+            0.8975
+          ],
+          "n": 5
+        },
+        "val_acc": {
+          "mean": 0.87,
+          "std": 0.0187,
+          "min": 0.85,
+          "max": 0.9,
+          "values": [
+            0.85,
+            0.86,
+            0.9,
+            0.87,
+            0.87
+          ],
+          "n": 5
+        },
+        "seconds": {
+          "mean": 2.602,
+          "std": 0.0661,
+          "min": 2.49,
+          "max": 2.65,
+          "values": [
+            2.49,
+            2.6,
+            2.65,
+            2.65,
+            2.62
+          ],
+          "n": 5
+        }
+      },
+      "patch_vqc_matched": {
+        "regime": "II_classical_on_quantum",
+        "params": {
+          "total_model_params": 20364,
+          "quantum_params": 48,
+          "classical_wrapper_params": 20316,
+          "preprocessing_fitted_params": 0,
+          "effective_total_params": 20364,
+          "quantum_param_share": 0.002357
+        },
+        "qwc_groups": 3,
+        "test_acc": {
+          "mean": 0.8705,
+          "std": 0.0262,
+          "min": 0.8325,
+          "max": 0.895,
+          "values": [
+            0.86,
+            0.87,
+            0.895,
+            0.8325,
+            0.895
+          ],
+          "n": 5
+        },
+        "val_acc": {
+          "mean": 0.868,
+          "std": 0.0236,
+          "min": 0.83,
+          "max": 0.89,
+          "values": [
+            0.89,
+            0.83,
+            0.885,
+            0.865,
+            0.87
+          ],
+          "n": 5
+        },
+        "seconds": {
+          "mean": 77.506,
+          "std": 0.4754,
+          "min": 77.02,
+          "max": 78.22,
+          "values": [
+            77.49,
+            77.02,
+            78.22,
+            77.14,
+            77.66
+          ],
+          "n": 5
+        }
+      },
+      "hybrid_vqc_matched": {
+        "regime": "II_classical_on_quantum",
+        "params": {
+          "total_model_params": 5162,
+          "quantum_params": 48,
+          "classical_wrapper_params": 5114,
+          "preprocessing_fitted_params": 0,
+          "effective_total_params": 5162,
+          "quantum_param_share": 0.009299
+        },
+        "qwc_groups": 3,
+        "test_acc": {
+          "mean": 0.76,
+          "std": 0.0904,
+          "min": 0.6575,
+          "max": 0.835,
+          "values": [
+            0.6575,
+            0.665,
+            0.825,
+            0.8175,
+            0.835
+          ],
+          "n": 5
+        },
+        "val_acc": {
+          "mean": 0.735,
+          "std": 0.0924,
+          "min": 0.605,
+          "max": 0.845,
+          "values": [
+            0.685,
+            0.605,
+            0.76,
+            0.78,
+            0.845
+          ],
+          "n": 5
+        },
+        "seconds": {
+          "mean": 57.948,
+          "std": 0.6697,
+          "min": 57.23,
+          "max": 58.94,
+          "values": [
+            57.47,
+            58.2,
+            58.94,
+            57.9,
+            57.23
+          ],
+          "n": 5
+        }
+      },
+      "hybrid_noq_matched": {
+        "regime": "I_classical",
+        "params": {
+          "total_model_params": 5162,
+          "quantum_params": 0,
+          "classical_wrapper_params": 5162,
+          "preprocessing_fitted_params": 0,
+          "effective_total_params": 5162,
+          "quantum_param_share": 0.0
+        },
+        "qwc_groups": 0,
+        "test_acc": {
+          "mean": 0.831,
+          "std": 0.0569,
+          "min": 0.75,
+          "max": 0.88,
+          "values": [
+            0.865,
+            0.7925,
+            0.88,
+            0.75,
+            0.8675
+          ],
+          "n": 5
+        },
+        "val_acc": {
+          "mean": 0.83,
+          "std": 0.0633,
+          "min": 0.74,
+          "max": 0.89,
+          "values": [
+            0.84,
+            0.795,
+            0.89,
+            0.74,
+            0.885
+          ],
+          "n": 5
+        },
+        "seconds": {
+          "mean": 5.38,
+          "std": 0.0964,
+          "min": 5.29,
+          "max": 5.51,
+          "values": [
+            5.51,
+            5.35,
+            5.29,
+            5.3,
+            5.45
+          ],
+          "n": 5
+        }
+      },
+      "qnative_reupload_fidelity": {
+        "regime": "III_quantum_native",
+        "params": {
+          "total_model_params": 96,
+          "quantum_params": 96,
+          "classical_wrapper_params": 0,
+          "preprocessing_fitted_params": 10192,
+          "effective_total_params": 10288,
+          "quantum_param_share": 1.0
+        },
+        "qwc_groups": 1,
+        "test_acc": {
+          "mean": 0.6175,
+          "std": 0.0307,
+          "min": 0.57,
+          "max": 0.6475,
+          "values": [
+            0.6475,
+            0.605,
+            0.6325,
+            0.57,
+            0.6325
+          ],
+          "n": 5
+        },
+        "val_acc": {
+          "mean": 0.606,
+          "std": 0.0522,
+          "min": 0.545,
+          "max": 0.68,
+          "values": [
+            0.68,
+            0.545,
+            0.585,
+            0.585,
+            0.635
+          ],
+          "n": 5
+        },
+        "seconds": {
+          "mean": 27.544,
+          "std": 0.7156,
+          "min": 26.82,
+          "max": 28.47,
+          "values": [
+            26.82,
+            27.07,
+            28.13,
+            28.47,
+            27.23
+          ],
+          "n": 5
+        }
+      },
+      "classical_trig_net": {
+        "regime": "I_classical",
+        "params": {
+          "total_model_params": 96,
+          "quantum_params": 0,
+          "classical_wrapper_params": 96,
+          "preprocessing_fitted_params": 10192,
+          "effective_total_params": 10288,
+          "quantum_param_share": 0.0
+        },
+        "qwc_groups": 0,
+        "test_acc": {
+          "mean": 0.6165,
+          "std": 0.0347,
+          "min": 0.5625,
+          "max": 0.6475,
+          "values": [
+            0.63,
+            0.64,
+            0.5625,
+            0.6025,
+            0.6475
+          ],
+          "n": 5
+        },
+        "val_acc": {
+          "mean": 0.652,
+          "std": 0.0293,
+          "min": 0.62,
+          "max": 0.69,
+          "values": [
+            0.675,
+            0.62,
+            0.64,
+            0.635,
+            0.69
+          ],
+          "n": 5
+        },
+        "seconds": {
+          "mean": 0.938,
+          "std": 0.4888,
+          "min": 0.55,
+          "max": 1.54,
+          "values": [
+            0.55,
+            0.62,
+            1.4,
+            1.54,
+            0.58
+          ],
+          "n": 5
+        }
+      },
+      "qnative_iqp_kernel": {
+        "regime": "III_quantum_native",
+        "params": {
+          "total_model_params": 0,
+          "quantum_params": 0,
+          "classical_wrapper_params": 0,
+          "preprocessing_fitted_params": 5488,
+          "effective_total_params": 5488,
+          "quantum_param_share": 0.0
+        },
+        "qwc_groups": 1,
+        "test_acc": {
+          "mean": 0.738,
+          "std": 0.0339,
+          "min": 0.69,
+          "max": 0.7775,
+          "values": [
+            0.7225,
+            0.76,
+            0.7775,
+            0.69,
+            0.74
+          ],
+          "n": 5
+        },
+        "val_acc": {
+          "mean": 0.745,
+          "std": 0.0245,
+          "min": 0.71,
+          "max": 0.77,
+          "values": [
+            0.76,
+            0.73,
+            0.77,
+            0.71,
+            0.755
+          ],
+          "n": 5
+        },
+        "seconds": {
+          "mean": 3.526,
+          "std": 0.3637,
+          "min": 3.15,
+          "max": 3.95,
+          "values": [
+            3.55,
+            3.81,
+            3.17,
+            3.15,
+            3.95
+          ],
+          "n": 5
+        },
+        "selected_alphas": [
+          0.25,
+          0.25,
+          0.25,
+          0.15,
+          0.25
+        ],
+        "concentration_curve_seed0": {
+          "0.15": {
+            "offdiag_mean": 0.8751,
+            "best_val_acc": 0.75
+          },
+          "0.25": {
+            "offdiag_mean": 0.4365,
+            "best_val_acc": 0.76
+          },
+          "0.35": {
+            "offdiag_mean": 0.1524,
+            "best_val_acc": 0.72
+          },
+          "0.50": {
+            "offdiag_mean": 0.0384,
+            "best_val_acc": 0.685
+          },
+          "0.75": {
+            "offdiag_mean": 0.0186,
+            "best_val_acc": 0.41
+          }
+        }
+      },
+      "classical_rbf_pca6": {
+        "regime": "I_classical",
+        "params": {
+          "total_model_params": 0,
+          "quantum_params": 0,
+          "classical_wrapper_params": 0,
+          "preprocessing_fitted_params": 5488,
+          "effective_total_params": 5488,
+          "quantum_param_share": 0.0
+        },
+        "qwc_groups": 0,
+        "test_acc": {
+          "mean": 0.7545,
+          "std": 0.0287,
+          "min": 0.72,
+          "max": 0.7825,
+          "values": [
+            0.7275,
+            0.7675,
+            0.7825,
+            0.72,
+            0.775
+          ],
+          "n": 5
+        },
+        "val_acc": {
+          "mean": 0.767,
+          "std": 0.0241,
+          "min": 0.745,
+          "max": 0.795,
+          "values": [
+            0.795,
+            0.76,
+            0.79,
+            0.745,
+            0.745
+          ],
+          "n": 5
+        },
+        "seconds": {
+          "mean": 0.8204,
+          "std": 0.1241,
+          "min": 0.706,
+          "max": 1.022,
+          "values": [
+            1.022,
+            0.785,
+            0.706,
+            0.743,
+            0.846
+          ],
+          "n": 5
+        }
+      },
+      "classical_poly2_pca6": {
+        "regime": "I_classical",
+        "params": {
+          "total_model_params": 0,
+          "quantum_params": 0,
+          "classical_wrapper_params": 0,
+          "preprocessing_fitted_params": 5488,
+          "effective_total_params": 5488,
+          "quantum_param_share": 0.0
+        },
+        "qwc_groups": 0,
+        "test_acc": {
+          "mean": 0.7415,
+          "std": 0.0212,
+          "min": 0.7075,
+          "max": 0.76,
+          "values": [
+            0.7075,
+            0.75,
+            0.76,
+            0.735,
+            0.755
+          ],
+          "n": 5
+        },
+        "val_acc": {
+          "mean": 0.748,
+          "std": 0.0217,
+          "min": 0.725,
+          "max": 0.775,
+          "values": [
+            0.765,
+            0.745,
+            0.775,
+            0.725,
+            0.73
+          ],
+          "n": 5
+        },
+        "seconds": {
+          "mean": 0.14,
+          "std": 0.0276,
+          "min": 0.119,
+          "max": 0.188,
+          "values": [
+            0.119,
+            0.188,
+            0.128,
+            0.137,
+            0.128
+          ],
+          "n": 5
+        }
+      }
+    },
+    "paired_tests_holm": {
+      "A1_vqc_amp_minus_random_quad": {
+        "mean_pt": 12.45,
+        "std_pt": 4.69,
+        "ci95_pt": [
+          6.63,
+          18.27
+        ],
+        "t_stat": 5.938,
+        "p_value": 0.004033,
+        "n_positive": 5,
+        "per_seed_pt": [
+          17.5,
+          10.0,
+          13.25,
+          15.75,
+          5.75
+        ],
+        "p_holm": 0.024198,
+        "holm_significant": true
+      },
+      "A1_vqc_amp_shots200_minus_analytic": {
+        "mean_pt": -36.7,
+        "std_pt": 4.24,
+        "ci95_pt": [
+          -41.96,
+          -31.44
+        ],
+        "t_stat": -19.37,
+        "p_value": 4.2e-05,
+        "n_positive": 0,
+        "per_seed_pt": [
+          -41.25,
+          -38.25,
+          -37.0,
+          -29.75,
+          -37.25
+        ],
+        "p_holm": 0.000336,
+        "holm_significant": true
+      },
+      "A1_vqc_amp_shots1000_minus_analytic": {
+        "mean_pt": -14.0,
+        "std_pt": 3.07,
+        "ci95_pt": [
+          -17.81,
+          -10.19
+        ],
+        "t_stat": -10.207,
+        "p_value": 0.000519,
+        "n_positive": 0,
+        "per_seed_pt": [
+          -16.75,
+          -17.0,
+          -13.5,
+          -9.5,
+          -13.25
+        ],
+        "p_holm": 0.003633,
+        "holm_significant": true
+      },
+      "A2_patch_vqc_minus_patch_lowrank": {
+        "mean_pt": -0.1,
+        "std_pt": 1.82,
+        "ci95_pt": [
+          -2.36,
+          2.16
+        ],
+        "t_stat": -0.123,
+        "p_value": 0.907972,
+        "n_positive": 1,
+        "per_seed_pt": [
+          -0.75,
+          0.0,
+          2.75,
+          -2.25,
+          -0.25
+        ],
+        "p_holm": 1.0,
+        "holm_significant": false
+      },
+      "A3_hybrid_vqc_minus_hybrid_noq": {
+        "mean_pt": -7.1,
+        "std_pt": 10.34,
+        "ci95_pt": [
+          -19.94,
+          5.74
+        ],
+        "t_stat": -1.536,
+        "p_value": 0.199392,
+        "n_positive": 1,
+        "per_seed_pt": [
+          -20.75,
+          -12.75,
+          -5.5,
+          6.75,
+          -3.25
+        ],
+        "p_holm": 0.797568,
+        "holm_significant": false
+      },
+      "A4_reupload_fidelity_minus_trig_net": {
+        "mean_pt": 0.1,
+        "std_pt": 4.39,
+        "ci95_pt": [
+          -5.35,
+          5.55
+        ],
+        "t_stat": 0.051,
+        "p_value": 0.961816,
+        "n_positive": 2,
+        "per_seed_pt": [
+          1.75,
+          -3.5,
+          7.0,
+          -3.25,
+          -1.5
+        ],
+        "p_holm": 1.0,
+        "holm_significant": false
+      },
+      "A5_iqp_kernel_minus_rbf_pca6": {
+        "mean_pt": -1.65,
+        "std_pt": 1.47,
+        "ci95_pt": [
+          -3.48,
+          0.18
+        ],
+        "t_stat": -2.502,
+        "p_value": 0.066644,
+        "n_positive": 0,
+        "per_seed_pt": [
+          -0.5,
+          -0.75,
+          -0.5,
+          -3.0,
+          -3.5
+        ],
+        "p_holm": 0.33322,
+        "holm_significant": false
+      },
+      "A5_iqp_kernel_minus_poly2_pca6": {
+        "mean_pt": -0.35,
+        "std_pt": 2.66,
+        "ci95_pt": [
+          -3.65,
+          2.95
+        ],
+        "t_stat": -0.295,
+        "p_value": 0.782847,
+        "n_positive": 3,
+        "per_seed_pt": [
+          1.5,
+          1.0,
+          1.75,
+          -4.5,
+          -1.5
+        ],
+        "p_holm": 1.0,
+        "holm_significant": false
+      }
+    }
+  },
+  "track_b_cluster_ising_spt": {
+    "hamiltonian": "H = -sum Z_{i-1}X_iZ_{i+1} - h1 sum X_i - h2 sum X_iX_{i+1} (PBC)",
+    "summary": {
+      "qcnn_spt": {
+        "regime": "III_quantum_native",
+        "params": {
+          "total_model_params": 36,
+          "quantum_params": 36,
+          "classical_wrapper_params": 0,
+          "preprocessing_fitted_params": 0,
+          "effective_total_params": 36,
+          "quantum_param_share": 1.0
+        },
+        "qwc_groups": 1,
+        "test_acc": {
+          "mean": 0.9967,
+          "std": 0.0045,
+          "min": 0.9917,
+          "max": 1.0,
+          "values": [
+            1.0,
+            1.0,
+            0.9917,
+            1.0,
+            0.9917
+          ],
+          "n": 5
+        },
+        "val_acc": {
+          "mean": 1.0,
+          "std": 0.0,
+          "min": 1.0,
+          "max": 1.0,
+          "values": [
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ],
+          "n": 5
+        },
+        "seconds": {
+          "mean": 33.874,
+          "std": 0.609,
+          "min": 33.25,
+          "max": 34.74,
+          "values": [
+            33.99,
+            34.74,
+            34.06,
+            33.25,
+            33.33
+          ],
+          "n": 5
+        },
+        "test_acc_shots_200": {
+          "mean": 0.9633,
+          "std": 0.0356,
+          "min": 0.925,
+          "max": 1.0,
+          "values": [
+            0.9833,
+            1.0,
+            0.9833,
+            0.925,
+            0.925
+          ],
+          "n": 5
+        },
+        "test_acc_shots_1000": {
+          "mean": 0.995,
+          "std": 0.0045,
+          "min": 0.9917,
+          "max": 1.0,
+          "values": [
+            0.9917,
+            1.0,
+            1.0,
+            0.9917,
+            0.9917
+          ],
+          "n": 5
+        }
+      },
+      "classical_1body_logreg": {
+        "regime": "I_classical",
+        "params": {
+          "total_model_params": 25,
+          "quantum_params": 0,
+          "classical_wrapper_params": 25,
+          "preprocessing_fitted_params": 0,
+          "effective_total_params": 25,
+          "quantum_param_share": 0.0
+        },
+        "qwc_groups": 0,
+        "test_acc": {
+          "mean": 0.6917,
+          "std": 0.0899,
+          "min": 0.5417,
+          "max": 0.7583,
+          "values": [
+            0.7333,
+            0.5417,
+            0.675,
+            0.7583,
+            0.75
+          ],
+          "n": 5
+        },
+        "val_acc": {
+          "mean": 0.7,
+          "std": 0.1074,
+          "min": 0.5333,
+          "max": 0.8333,
+          "values": [
+            0.7167,
+            0.5333,
+            0.7,
+            0.8333,
+            0.7167
+          ],
+          "n": 5
+        },
+        "seconds": {
+          "mean": 0.0486,
+          "std": 0.0107,
+          "min": 0.039,
+          "max": 0.067,
+          "values": [
+            0.045,
+            0.039,
+            0.046,
+            0.046,
+            0.067
+          ],
+          "n": 5
+        },
+        "input_dim": 24
+      },
+      "classical_1body_mlp": {
+        "regime": "I_classical",
+        "params": {
+          "total_model_params": 833,
+          "quantum_params": 0,
+          "classical_wrapper_params": 833,
+          "preprocessing_fitted_params": 0,
+          "effective_total_params": 833,
+          "quantum_param_share": 0.0
+        },
+        "qwc_groups": 0,
+        "test_acc": {
+          "mean": 0.9167,
+          "std": 0.0118,
+          "min": 0.9,
+          "max": 0.9333,
+          "values": [
+            0.9333,
+            0.9167,
+            0.9167,
+            0.9167,
+            0.9
+          ],
+          "n": 5
+        },
+        "val_acc": {
+          "mean": 0.89,
+          "std": 0.0224,
+          "min": 0.8667,
+          "max": 0.9167,
+          "values": [
+            0.9,
+            0.8667,
+            0.8667,
+            0.9,
+            0.9167
+          ],
+          "n": 5
+        },
+        "seconds": {
+          "mean": 1.7696,
+          "std": 0.0821,
+          "min": 1.649,
+          "max": 1.87,
+          "values": [
+            1.814,
+            1.763,
+            1.649,
+            1.87,
+            1.752
+          ],
+          "n": 5
+        },
+        "input_dim": 24
+      },
+      "classical_2body_mlp": {
+        "regime": "I_classical",
+        "params": {
+          "total_model_params": 1601,
+          "quantum_params": 0,
+          "classical_wrapper_params": 1601,
+          "preprocessing_fitted_params": 0,
+          "effective_total_params": 1601,
+          "quantum_param_share": 0.0
+        },
+        "qwc_groups": 0,
+        "test_acc": {
+          "mean": 0.9517,
+          "std": 0.0379,
+          "min": 0.9,
+          "max": 1.0,
+          "values": [
+            0.975,
+            1.0,
+            0.9,
+            0.9417,
+            0.9417
+          ],
+          "n": 5
+        },
+        "val_acc": {
+          "mean": 0.96,
+          "std": 0.048,
+          "min": 0.9,
+          "max": 1.0,
+          "values": [
+            1.0,
+            1.0,
+            0.9167,
+            0.9,
+            0.9833
+          ],
+          "n": 5
+        },
+        "seconds": {
+          "mean": 1.3154,
+          "std": 0.1494,
+          "min": 1.192,
+          "max": 1.565,
+          "values": [
+            1.565,
+            1.213,
+            1.326,
+            1.192,
+            1.281
+          ],
+          "n": 5
+        },
+        "input_dim": 48
+      },
+      "classical_full_state_mlp": {
+        "regime": "I_classical",
+        "params": {
+          "total_model_params": 8257,
+          "quantum_params": 0,
+          "classical_wrapper_params": 8257,
+          "preprocessing_fitted_params": 0,
+          "effective_total_params": 8257,
+          "quantum_param_share": 0.0
+        },
+        "qwc_groups": 0,
+        "test_acc": {
+          "mean": 1.0,
+          "std": 0.0,
+          "min": 1.0,
+          "max": 1.0,
+          "values": [
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ],
+          "n": 5
+        },
+        "val_acc": {
+          "mean": 1.0,
+          "std": 0.0,
+          "min": 1.0,
+          "max": 1.0,
+          "values": [
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ],
+          "n": 5
+        },
+        "seconds": {
+          "mean": 0.1914,
+          "std": 0.0172,
+          "min": 0.174,
+          "max": 0.22,
+          "values": [
+            0.19,
+            0.22,
+            0.174,
+            0.189,
+            0.184
+          ],
+          "n": 5
+        },
+        "input_dim": 256
+      }
+    },
+    "paired_tests_holm": {
+      "B1_qcnn_minus_1body_logreg": {
+        "mean_pt": 30.5,
+        "std_pt": 9.1,
+        "ci95_pt": [
+          19.2,
+          41.8
+        ],
+        "t_stat": 7.496,
+        "p_value": 0.001695,
+        "n_positive": 5,
+        "per_seed_pt": [
+          26.67,
+          45.83,
+          31.67,
+          24.17,
+          24.17
+        ],
+        "p_holm": 0.00678,
+        "holm_significant": true
+      },
+      "B2_qcnn_minus_1body_mlp": {
+        "mean_pt": 8.0,
+        "std_pt": 0.95,
+        "ci95_pt": [
+          6.82,
+          9.18
+        ],
+        "t_stat": 18.842,
+        "p_value": 4.7e-05,
+        "n_positive": 5,
+        "per_seed_pt": [
+          6.67,
+          8.33,
+          7.5,
+          8.33,
+          9.17
+        ],
+        "p_holm": 0.000235,
+        "holm_significant": true
+      },
+      "B3_qcnn_minus_2body_mlp": {
+        "mean_pt": 4.5,
+        "std_pt": 3.47,
+        "ci95_pt": [
+          0.2,
+          8.8
+        ],
+        "t_stat": 2.902,
+        "p_value": 0.044013,
+        "n_positive": 4,
+        "per_seed_pt": [
+          2.5,
+          0.0,
+          9.17,
+          5.83,
+          5.0
+        ],
+        "p_holm": 0.132039,
+        "holm_significant": false
+      },
+      "B4_qcnn_minus_full_state_oracle": {
+        "mean_pt": -0.33,
+        "std_pt": 0.45,
+        "ci95_pt": [
+          -0.9,
+          0.23
+        ],
+        "t_stat": -1.633,
+        "p_value": 0.177808,
+        "n_positive": 0,
+        "per_seed_pt": [
+          0.0,
+          0.0,
+          -0.83,
+          0.0,
+          -0.83
+        ],
+        "p_holm": 0.198112,
+        "holm_significant": false
+      },
+      "B5_qcnn_shots200_minus_analytic": {
+        "mean_pt": -3.34,
+        "std_pt": 3.49,
+        "ci95_pt": [
+          -7.66,
+          0.99
+        ],
+        "t_stat": -2.14,
+        "p_value": 0.099056,
+        "n_positive": 0,
+        "per_seed_pt": [
+          -1.67,
+          0.0,
+          -0.84,
+          -7.5,
+          -6.67
+        ],
+        "p_holm": 0.198112,
+        "holm_significant": false
+      }
+    }
+  },
+  "per_seed_runs": [
+    {
+      "seed": 0,
+      "track_a": {
+        "classical_random_quad": {
+          "regime": "I_classical",
+          "test_acc": 0.6325,
+          "val_acc": 0.695,
+          "seconds": 2.91,
+          "params": {
+            "total_model_params": 1642,
+            "quantum_params": 0,
+            "classical_wrapper_params": 1642,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 1642,
+            "quantum_param_share": 0.0
+          },
+          "qwc_groups": 0
+        },
+        "vqc_amp_matched": {
+          "regime": "II_classical_on_quantum",
+          "test_acc": 0.8075,
+          "test_acc_shots_200": 0.395,
+          "test_acc_shots_1000": 0.64,
+          "shot_eval_seconds": 2.51,
+          "val_acc": 0.825,
+          "seconds": 93.0,
+          "params": {
+            "total_model_params": 1702,
+            "quantum_params": 60,
+            "classical_wrapper_params": 1642,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 1702,
+            "quantum_param_share": 0.035253
+          },
+          "qwc_groups": 3
+        },
+        "classical_poly2_unscaled": {
+          "regime": "I_classical",
+          "test_acc": 0.9075,
+          "val_acc": 0.9,
+          "selected_C": 5.0,
+          "identical_to_qkernel_amp": true,
+          "seconds": 0.853,
+          "params": {
+            "total_model_params": 0,
+            "quantum_params": 0,
+            "classical_wrapper_params": 0,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 0,
+            "quantum_param_share": 0.0
+          },
+          "qwc_groups": 0
+        },
+        "classical_patch_lowrank": {
+          "regime": "I_classical",
+          "test_acc": 0.8675,
+          "val_acc": 0.85,
+          "seconds": 2.49,
+          "params": {
+            "total_model_params": 20364,
+            "quantum_params": 0,
+            "classical_wrapper_params": 20364,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 20364,
+            "quantum_param_share": 0.0
+          },
+          "qwc_groups": 0
+        },
+        "patch_vqc_matched": {
+          "regime": "II_classical_on_quantum",
+          "test_acc": 0.86,
+          "val_acc": 0.89,
+          "seconds": 77.49,
+          "params": {
+            "total_model_params": 20364,
+            "quantum_params": 48,
+            "classical_wrapper_params": 20316,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 20364,
+            "quantum_param_share": 0.002357
+          },
+          "qwc_groups": 3
+        },
+        "hybrid_vqc_matched": {
+          "regime": "II_classical_on_quantum",
+          "test_acc": 0.6575,
+          "val_acc": 0.685,
+          "seconds": 57.47,
+          "params": {
+            "total_model_params": 5162,
+            "quantum_params": 48,
+            "classical_wrapper_params": 5114,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 5162,
+            "quantum_param_share": 0.009299
+          },
+          "qwc_groups": 3
+        },
+        "hybrid_noq_matched": {
+          "regime": "I_classical",
+          "test_acc": 0.865,
+          "val_acc": 0.84,
+          "seconds": 5.51,
+          "params": {
+            "total_model_params": 5162,
+            "quantum_params": 0,
+            "classical_wrapper_params": 5162,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 5162,
+            "quantum_param_share": 0.0
+          },
+          "qwc_groups": 0
+        },
+        "qnative_reupload_fidelity": {
+          "regime": "III_quantum_native",
+          "test_acc": 0.6475,
+          "val_acc": 0.68,
+          "seconds": 26.82,
+          "params": {
+            "total_model_params": 96,
+            "quantum_params": 96,
+            "classical_wrapper_params": 0,
+            "preprocessing_fitted_params": 10192,
+            "effective_total_params": 10288,
+            "quantum_param_share": 1.0
+          },
+          "qwc_groups": 1
+        },
+        "classical_trig_net": {
+          "regime": "I_classical",
+          "test_acc": 0.63,
+          "val_acc": 0.675,
+          "seconds": 0.55,
+          "params": {
+            "total_model_params": 96,
+            "quantum_params": 0,
+            "classical_wrapper_params": 96,
+            "preprocessing_fitted_params": 10192,
+            "effective_total_params": 10288,
+            "quantum_param_share": 0.0
+          },
+          "qwc_groups": 0
+        },
+        "qnative_iqp_kernel": {
+          "regime": "III_quantum_native",
+          "test_acc": 0.7225,
+          "val_acc": 0.76,
+          "selected_alpha": 0.25,
+          "selected_C": 10.0,
+          "concentration_curve": {
+            "0.15": {
+              "offdiag_mean": 0.8751,
+              "best_val_acc": 0.75
+            },
+            "0.25": {
+              "offdiag_mean": 0.4365,
+              "best_val_acc": 0.76
+            },
+            "0.35": {
+              "offdiag_mean": 0.1524,
+              "best_val_acc": 0.72
+            },
+            "0.50": {
+              "offdiag_mean": 0.0384,
+              "best_val_acc": 0.685
+            },
+            "0.75": {
+              "offdiag_mean": 0.0186,
+              "best_val_acc": 0.41
+            }
+          },
+          "seconds": 3.55,
+          "params": {
+            "total_model_params": 0,
+            "quantum_params": 0,
+            "classical_wrapper_params": 0,
+            "preprocessing_fitted_params": 5488,
+            "effective_total_params": 5488,
+            "quantum_param_share": 0.0
+          },
+          "qwc_groups": 1
+        },
+        "classical_rbf_pca6": {
+          "regime": "I_classical",
+          "test_acc": 0.7275,
+          "val_acc": 0.795,
+          "selected_gamma": "scale",
+          "selected_C": 5.0,
+          "seconds": 1.022,
+          "params": {
+            "total_model_params": 0,
+            "quantum_params": 0,
+            "classical_wrapper_params": 0,
+            "preprocessing_fitted_params": 5488,
+            "effective_total_params": 5488,
+            "quantum_param_share": 0.0
+          },
+          "qwc_groups": 0
+        },
+        "classical_poly2_pca6": {
+          "regime": "I_classical",
+          "test_acc": 0.7075,
+          "val_acc": 0.765,
+          "selected_C": 5.0,
+          "seconds": 0.119,
+          "params": {
+            "total_model_params": 0,
+            "quantum_params": 0,
+            "classical_wrapper_params": 0,
+            "preprocessing_fitted_params": 5488,
+            "effective_total_params": 5488,
+            "quantum_param_share": 0.0
+          },
+          "qwc_groups": 0
+        }
+      },
+      "track_b": {
+        "qcnn_spt": {
+          "regime": "III_quantum_native",
+          "test_acc": 1.0,
+          "test_acc_shots_200": 0.9833,
+          "test_acc_shots_1000": 0.9917,
+          "val_acc": 1.0,
+          "seconds": 33.99,
+          "params": {
+            "total_model_params": 36,
+            "quantum_params": 36,
+            "classical_wrapper_params": 0,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 36,
+            "quantum_param_share": 1.0
+          },
+          "qwc_groups": 1
+        },
+        "classical_1body_logreg": {
+          "regime": "I_classical",
+          "test_acc": 0.7333,
+          "val_acc": 0.7167,
+          "seconds": 0.045,
+          "params": {
+            "total_model_params": 25,
+            "quantum_params": 0,
+            "classical_wrapper_params": 25,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 25,
+            "quantum_param_share": 0.0
+          },
+          "input_dim": 24,
+          "qwc_groups": 0
+        },
+        "classical_1body_mlp": {
+          "regime": "I_classical",
+          "test_acc": 0.9333,
+          "val_acc": 0.9,
+          "seconds": 1.814,
+          "params": {
+            "total_model_params": 833,
+            "quantum_params": 0,
+            "classical_wrapper_params": 833,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 833,
+            "quantum_param_share": 0.0
+          },
+          "input_dim": 24,
+          "qwc_groups": 0
+        },
+        "classical_2body_mlp": {
+          "regime": "I_classical",
+          "test_acc": 0.975,
+          "val_acc": 1.0,
+          "seconds": 1.565,
+          "params": {
+            "total_model_params": 1601,
+            "quantum_params": 0,
+            "classical_wrapper_params": 1601,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 1601,
+            "quantum_param_share": 0.0
+          },
+          "input_dim": 48,
+          "qwc_groups": 0
+        },
+        "classical_full_state_mlp": {
+          "regime": "I_classical",
+          "test_acc": 1.0,
+          "val_acc": 1.0,
+          "seconds": 0.19,
+          "params": {
+            "total_model_params": 8257,
+            "quantum_params": 0,
+            "classical_wrapper_params": 8257,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 8257,
+            "quantum_param_share": 0.0
+          },
+          "input_dim": 256,
+          "qwc_groups": 0
+        }
+      },
+      "matched_assertions": [
+        "A1: vqc_amp_matched == classical_random_quad",
+        "A2: patch_vqc_matched == classical_patch_lowrank (exact 20364 params, batch=64)",
+        "A3: hybrid_vqc_matched == hybrid_noq_matched (exact 5162 params, stabilize+BN)",
+        "A4: qnative_reupload_fidelity (96q/0c) vs classical_trig_net (96c)",
+        "A5: qnative_iqp_kernel == classical_rbf_pca6 == classical_poly2_pca6 (same PCA-6, Val-tuned)"
+      ],
+      "mnist_meta": {
+        "source": "idx",
+        "n_classes": 10,
+        "n_train": 600,
+        "n_val": 200,
+        "n_test": 400,
+        "seed": 0,
+        "disjoint_train_val_test": true,
+        "fallback_reasons": []
+      },
+      "spt_meta": {
+        "hamiltonian": "H = -sum Z_{i-1}X_iZ_{i+1} - h1 sum X_i - h2 sum X_iX_{i+1} (PBC)",
+        "n_qubits": 8,
+        "seed": 0,
+        "train_stats": {
+          "n_samples": 120,
+          "min_gap": 0.0759,
+          "spt_string_order_mean": 0.9744,
+          "non_spt_string_order_mean": 0.2084
+        },
+        "val_stats": {
+          "n_samples": 60,
+          "min_gap": 0.0788,
+          "spt_string_order_mean": 0.9776,
+          "non_spt_string_order_mean": 0.2111
+        },
+        "test_stats": {
+          "n_samples": 120,
+          "min_gap": 0.0873,
+          "spt_string_order_mean": 0.9825,
+          "non_spt_string_order_mean": 0.2264
+        }
+      },
+      "seed_seconds": 326.92
+    },
+    {
+      "seed": 1,
+      "track_a": {
+        "classical_random_quad": {
+          "regime": "I_classical",
+          "test_acc": 0.675,
+          "val_acc": 0.635,
+          "seconds": 3.01,
+          "params": {
+            "total_model_params": 1642,
+            "quantum_params": 0,
+            "classical_wrapper_params": 1642,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 1642,
+            "quantum_param_share": 0.0
+          },
+          "qwc_groups": 0
+        },
+        "vqc_amp_matched": {
+          "regime": "II_classical_on_quantum",
+          "test_acc": 0.775,
+          "test_acc_shots_200": 0.3925,
+          "test_acc_shots_1000": 0.605,
+          "shot_eval_seconds": 2.37,
+          "val_acc": 0.76,
+          "seconds": 92.36,
+          "params": {
+            "total_model_params": 1702,
+            "quantum_params": 60,
+            "classical_wrapper_params": 1642,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 1702,
+            "quantum_param_share": 0.035253
+          },
+          "qwc_groups": 3
+        },
+        "classical_poly2_unscaled": {
+          "regime": "I_classical",
+          "test_acc": 0.925,
+          "val_acc": 0.91,
+          "selected_C": 1.0,
+          "identical_to_qkernel_amp": true,
+          "seconds": 1.378,
+          "params": {
+            "total_model_params": 0,
+            "quantum_params": 0,
+            "classical_wrapper_params": 0,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 0,
+            "quantum_param_share": 0.0
+          },
+          "qwc_groups": 0
+        },
+        "classical_patch_lowrank": {
+          "regime": "I_classical",
+          "test_acc": 0.87,
+          "val_acc": 0.86,
+          "seconds": 2.6,
+          "params": {
+            "total_model_params": 20364,
+            "quantum_params": 0,
+            "classical_wrapper_params": 20364,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 20364,
+            "quantum_param_share": 0.0
+          },
+          "qwc_groups": 0
+        },
+        "patch_vqc_matched": {
+          "regime": "II_classical_on_quantum",
+          "test_acc": 0.87,
+          "val_acc": 0.83,
+          "seconds": 77.02,
+          "params": {
+            "total_model_params": 20364,
+            "quantum_params": 48,
+            "classical_wrapper_params": 20316,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 20364,
+            "quantum_param_share": 0.002357
+          },
+          "qwc_groups": 3
+        },
+        "hybrid_vqc_matched": {
+          "regime": "II_classical_on_quantum",
+          "test_acc": 0.665,
+          "val_acc": 0.605,
+          "seconds": 58.2,
+          "params": {
+            "total_model_params": 5162,
+            "quantum_params": 48,
+            "classical_wrapper_params": 5114,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 5162,
+            "quantum_param_share": 0.009299
+          },
+          "qwc_groups": 3
+        },
+        "hybrid_noq_matched": {
+          "regime": "I_classical",
+          "test_acc": 0.7925,
+          "val_acc": 0.795,
+          "seconds": 5.35,
+          "params": {
+            "total_model_params": 5162,
+            "quantum_params": 0,
+            "classical_wrapper_params": 5162,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 5162,
+            "quantum_param_share": 0.0
+          },
+          "qwc_groups": 0
+        },
+        "qnative_reupload_fidelity": {
+          "regime": "III_quantum_native",
+          "test_acc": 0.605,
+          "val_acc": 0.545,
+          "seconds": 27.07,
+          "params": {
+            "total_model_params": 96,
+            "quantum_params": 96,
+            "classical_wrapper_params": 0,
+            "preprocessing_fitted_params": 10192,
+            "effective_total_params": 10288,
+            "quantum_param_share": 1.0
+          },
+          "qwc_groups": 1
+        },
+        "classical_trig_net": {
+          "regime": "I_classical",
+          "test_acc": 0.64,
+          "val_acc": 0.62,
+          "seconds": 0.62,
+          "params": {
+            "total_model_params": 96,
+            "quantum_params": 0,
+            "classical_wrapper_params": 96,
+            "preprocessing_fitted_params": 10192,
+            "effective_total_params": 10288,
+            "quantum_param_share": 0.0
+          },
+          "qwc_groups": 0
+        },
+        "qnative_iqp_kernel": {
+          "regime": "III_quantum_native",
+          "test_acc": 0.76,
+          "val_acc": 0.73,
+          "selected_alpha": 0.25,
+          "selected_C": 20.0,
+          "concentration_curve": {
+            "0.15": {
+              "offdiag_mean": 0.8733,
+              "best_val_acc": 0.72
+            },
+            "0.25": {
+              "offdiag_mean": 0.437,
+              "best_val_acc": 0.73
+            },
+            "0.35": {
+              "offdiag_mean": 0.1574,
+              "best_val_acc": 0.66
+            },
+            "0.50": {
+              "offdiag_mean": 0.0378,
+              "best_val_acc": 0.65
+            },
+            "0.75": {
+              "offdiag_mean": 0.0184,
+              "best_val_acc": 0.4
+            }
+          },
+          "seconds": 3.81,
+          "params": {
+            "total_model_params": 0,
+            "quantum_params": 0,
+            "classical_wrapper_params": 0,
+            "preprocessing_fitted_params": 5488,
+            "effective_total_params": 5488,
+            "quantum_param_share": 0.0
+          },
+          "qwc_groups": 1
+        },
+        "classical_rbf_pca6": {
+          "regime": "I_classical",
+          "test_acc": 0.7675,
+          "val_acc": 0.76,
+          "selected_gamma": 0.1,
+          "selected_C": 20.0,
+          "seconds": 0.785,
+          "params": {
+            "total_model_params": 0,
+            "quantum_params": 0,
+            "classical_wrapper_params": 0,
+            "preprocessing_fitted_params": 5488,
+            "effective_total_params": 5488,
+            "quantum_param_share": 0.0
+          },
+          "qwc_groups": 0
+        },
+        "classical_poly2_pca6": {
+          "regime": "I_classical",
+          "test_acc": 0.75,
+          "val_acc": 0.745,
+          "selected_C": 20.0,
+          "seconds": 0.188,
+          "params": {
+            "total_model_params": 0,
+            "quantum_params": 0,
+            "classical_wrapper_params": 0,
+            "preprocessing_fitted_params": 5488,
+            "effective_total_params": 5488,
+            "quantum_param_share": 0.0
+          },
+          "qwc_groups": 0
+        }
+      },
+      "track_b": {
+        "qcnn_spt": {
+          "regime": "III_quantum_native",
+          "test_acc": 1.0,
+          "test_acc_shots_200": 1.0,
+          "test_acc_shots_1000": 1.0,
+          "val_acc": 1.0,
+          "seconds": 34.74,
+          "params": {
+            "total_model_params": 36,
+            "quantum_params": 36,
+            "classical_wrapper_params": 0,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 36,
+            "quantum_param_share": 1.0
+          },
+          "qwc_groups": 1
+        },
+        "classical_1body_logreg": {
+          "regime": "I_classical",
+          "test_acc": 0.5417,
+          "val_acc": 0.5333,
+          "seconds": 0.039,
+          "params": {
+            "total_model_params": 25,
+            "quantum_params": 0,
+            "classical_wrapper_params": 25,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 25,
+            "quantum_param_share": 0.0
+          },
+          "input_dim": 24,
+          "qwc_groups": 0
+        },
+        "classical_1body_mlp": {
+          "regime": "I_classical",
+          "test_acc": 0.9167,
+          "val_acc": 0.8667,
+          "seconds": 1.763,
+          "params": {
+            "total_model_params": 833,
+            "quantum_params": 0,
+            "classical_wrapper_params": 833,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 833,
+            "quantum_param_share": 0.0
+          },
+          "input_dim": 24,
+          "qwc_groups": 0
+        },
+        "classical_2body_mlp": {
+          "regime": "I_classical",
+          "test_acc": 1.0,
+          "val_acc": 1.0,
+          "seconds": 1.213,
+          "params": {
+            "total_model_params": 1601,
+            "quantum_params": 0,
+            "classical_wrapper_params": 1601,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 1601,
+            "quantum_param_share": 0.0
+          },
+          "input_dim": 48,
+          "qwc_groups": 0
+        },
+        "classical_full_state_mlp": {
+          "regime": "I_classical",
+          "test_acc": 1.0,
+          "val_acc": 1.0,
+          "seconds": 0.22,
+          "params": {
+            "total_model_params": 8257,
+            "quantum_params": 0,
+            "classical_wrapper_params": 8257,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 8257,
+            "quantum_param_share": 0.0
+          },
+          "input_dim": 256,
+          "qwc_groups": 0
+        }
+      },
+      "matched_assertions": [
+        "A1: vqc_amp_matched == classical_random_quad",
+        "A2: patch_vqc_matched == classical_patch_lowrank (exact 20364 params, batch=64)",
+        "A3: hybrid_vqc_matched == hybrid_noq_matched (exact 5162 params, stabilize+BN)",
+        "A4: qnative_reupload_fidelity (96q/0c) vs classical_trig_net (96c)",
+        "A5: qnative_iqp_kernel == classical_rbf_pca6 == classical_poly2_pca6 (same PCA-6, Val-tuned)"
+      ],
+      "mnist_meta": {
+        "source": "idx",
+        "n_classes": 10,
+        "n_train": 600,
+        "n_val": 200,
+        "n_test": 400,
+        "seed": 1,
+        "disjoint_train_val_test": true,
+        "fallback_reasons": []
+      },
+      "spt_meta": {
+        "hamiltonian": "H = -sum Z_{i-1}X_iZ_{i+1} - h1 sum X_i - h2 sum X_iX_{i+1} (PBC)",
+        "n_qubits": 8,
+        "seed": 1,
+        "train_stats": {
+          "n_samples": 120,
+          "min_gap": 0.0783,
+          "spt_string_order_mean": 0.9819,
+          "non_spt_string_order_mean": 0.2136
+        },
+        "val_stats": {
+          "n_samples": 60,
+          "min_gap": 0.0865,
+          "spt_string_order_mean": 0.9775,
+          "non_spt_string_order_mean": 0.2413
+        },
+        "test_stats": {
+          "n_samples": 120,
+          "min_gap": 0.0785,
+          "spt_string_order_mean": 0.9805,
+          "non_spt_string_order_mean": 0.2216
+        }
+      },
+      "seed_seconds": 327.72
+    },
+    {
+      "seed": 2,
+      "track_a": {
+        "classical_random_quad": {
+          "regime": "I_classical",
+          "test_acc": 0.67,
+          "val_acc": 0.63,
+          "seconds": 2.94,
+          "params": {
+            "total_model_params": 1642,
+            "quantum_params": 0,
+            "classical_wrapper_params": 1642,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 1642,
+            "quantum_param_share": 0.0
+          },
+          "qwc_groups": 0
+        },
+        "vqc_amp_matched": {
+          "regime": "II_classical_on_quantum",
+          "test_acc": 0.8025,
+          "test_acc_shots_200": 0.4325,
+          "test_acc_shots_1000": 0.6675,
+          "shot_eval_seconds": 2.33,
+          "val_acc": 0.83,
+          "seconds": 93.05,
+          "params": {
+            "total_model_params": 1702,
+            "quantum_params": 60,
+            "classical_wrapper_params": 1642,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 1702,
+            "quantum_param_share": 0.035253
+          },
+          "qwc_groups": 3
+        },
+        "classical_poly2_unscaled": {
+          "regime": "I_classical",
+          "test_acc": 0.9225,
+          "val_acc": 0.91,
+          "selected_C": 5.0,
+          "identical_to_qkernel_amp": true,
+          "seconds": 1.087,
+          "params": {
+            "total_model_params": 0,
+            "quantum_params": 0,
+            "classical_wrapper_params": 0,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 0,
+            "quantum_param_share": 0.0
+          },
+          "qwc_groups": 0
+        },
+        "classical_patch_lowrank": {
+          "regime": "I_classical",
+          "test_acc": 0.8675,
+          "val_acc": 0.9,
+          "seconds": 2.65,
+          "params": {
+            "total_model_params": 20364,
+            "quantum_params": 0,
+            "classical_wrapper_params": 20364,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 20364,
+            "quantum_param_share": 0.0
+          },
+          "qwc_groups": 0
+        },
+        "patch_vqc_matched": {
+          "regime": "II_classical_on_quantum",
+          "test_acc": 0.895,
+          "val_acc": 0.885,
+          "seconds": 78.22,
+          "params": {
+            "total_model_params": 20364,
+            "quantum_params": 48,
+            "classical_wrapper_params": 20316,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 20364,
+            "quantum_param_share": 0.002357
+          },
+          "qwc_groups": 3
+        },
+        "hybrid_vqc_matched": {
+          "regime": "II_classical_on_quantum",
+          "test_acc": 0.825,
+          "val_acc": 0.76,
+          "seconds": 58.94,
+          "params": {
+            "total_model_params": 5162,
+            "quantum_params": 48,
+            "classical_wrapper_params": 5114,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 5162,
+            "quantum_param_share": 0.009299
+          },
+          "qwc_groups": 3
+        },
+        "hybrid_noq_matched": {
+          "regime": "I_classical",
+          "test_acc": 0.88,
+          "val_acc": 0.89,
+          "seconds": 5.29,
+          "params": {
+            "total_model_params": 5162,
+            "quantum_params": 0,
+            "classical_wrapper_params": 5162,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 5162,
+            "quantum_param_share": 0.0
+          },
+          "qwc_groups": 0
+        },
+        "qnative_reupload_fidelity": {
+          "regime": "III_quantum_native",
+          "test_acc": 0.6325,
+          "val_acc": 0.585,
+          "seconds": 28.13,
+          "params": {
+            "total_model_params": 96,
+            "quantum_params": 96,
+            "classical_wrapper_params": 0,
+            "preprocessing_fitted_params": 10192,
+            "effective_total_params": 10288,
+            "quantum_param_share": 1.0
+          },
+          "qwc_groups": 1
+        },
+        "classical_trig_net": {
+          "regime": "I_classical",
+          "test_acc": 0.5625,
+          "val_acc": 0.64,
+          "seconds": 1.4,
+          "params": {
+            "total_model_params": 96,
+            "quantum_params": 0,
+            "classical_wrapper_params": 96,
+            "preprocessing_fitted_params": 10192,
+            "effective_total_params": 10288,
+            "quantum_param_share": 0.0
+          },
+          "qwc_groups": 0
+        },
+        "qnative_iqp_kernel": {
+          "regime": "III_quantum_native",
+          "test_acc": 0.7775,
+          "val_acc": 0.77,
+          "selected_alpha": 0.25,
+          "selected_C": 10.0,
+          "concentration_curve": {
+            "0.15": {
+              "offdiag_mean": 0.878,
+              "best_val_acc": 0.74
+            },
+            "0.25": {
+              "offdiag_mean": 0.4526,
+              "best_val_acc": 0.77
+            },
+            "0.35": {
+              "offdiag_mean": 0.1521,
+              "best_val_acc": 0.76
+            },
+            "0.50": {
+              "offdiag_mean": 0.0369,
+              "best_val_acc": 0.67
+            },
+            "0.75": {
+              "offdiag_mean": 0.0184,
+              "best_val_acc": 0.395
+            }
+          },
+          "seconds": 3.17,
+          "params": {
+            "total_model_params": 0,
+            "quantum_params": 0,
+            "classical_wrapper_params": 0,
+            "preprocessing_fitted_params": 5488,
+            "effective_total_params": 5488,
+            "quantum_param_share": 0.0
+          },
+          "qwc_groups": 1
+        },
+        "classical_rbf_pca6": {
+          "regime": "I_classical",
+          "test_acc": 0.7825,
+          "val_acc": 0.79,
+          "selected_gamma": 0.1,
+          "selected_C": 5.0,
+          "seconds": 0.706,
+          "params": {
+            "total_model_params": 0,
+            "quantum_params": 0,
+            "classical_wrapper_params": 0,
+            "preprocessing_fitted_params": 5488,
+            "effective_total_params": 5488,
+            "quantum_param_share": 0.0
+          },
+          "qwc_groups": 0
+        },
+        "classical_poly2_pca6": {
+          "regime": "I_classical",
+          "test_acc": 0.76,
+          "val_acc": 0.775,
+          "selected_C": 1.0,
+          "seconds": 0.128,
+          "params": {
+            "total_model_params": 0,
+            "quantum_params": 0,
+            "classical_wrapper_params": 0,
+            "preprocessing_fitted_params": 5488,
+            "effective_total_params": 5488,
+            "quantum_param_share": 0.0
+          },
+          "qwc_groups": 0
+        }
+      },
+      "track_b": {
+        "qcnn_spt": {
+          "regime": "III_quantum_native",
+          "test_acc": 0.9917,
+          "test_acc_shots_200": 0.9833,
+          "test_acc_shots_1000": 1.0,
+          "val_acc": 1.0,
+          "seconds": 34.06,
+          "params": {
+            "total_model_params": 36,
+            "quantum_params": 36,
+            "classical_wrapper_params": 0,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 36,
+            "quantum_param_share": 1.0
+          },
+          "qwc_groups": 1
+        },
+        "classical_1body_logreg": {
+          "regime": "I_classical",
+          "test_acc": 0.675,
+          "val_acc": 0.7,
+          "seconds": 0.046,
+          "params": {
+            "total_model_params": 25,
+            "quantum_params": 0,
+            "classical_wrapper_params": 25,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 25,
+            "quantum_param_share": 0.0
+          },
+          "input_dim": 24,
+          "qwc_groups": 0
+        },
+        "classical_1body_mlp": {
+          "regime": "I_classical",
+          "test_acc": 0.9167,
+          "val_acc": 0.8667,
+          "seconds": 1.649,
+          "params": {
+            "total_model_params": 833,
+            "quantum_params": 0,
+            "classical_wrapper_params": 833,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 833,
+            "quantum_param_share": 0.0
+          },
+          "input_dim": 24,
+          "qwc_groups": 0
+        },
+        "classical_2body_mlp": {
+          "regime": "I_classical",
+          "test_acc": 0.9,
+          "val_acc": 0.9167,
+          "seconds": 1.326,
+          "params": {
+            "total_model_params": 1601,
+            "quantum_params": 0,
+            "classical_wrapper_params": 1601,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 1601,
+            "quantum_param_share": 0.0
+          },
+          "input_dim": 48,
+          "qwc_groups": 0
+        },
+        "classical_full_state_mlp": {
+          "regime": "I_classical",
+          "test_acc": 1.0,
+          "val_acc": 1.0,
+          "seconds": 0.174,
+          "params": {
+            "total_model_params": 8257,
+            "quantum_params": 0,
+            "classical_wrapper_params": 8257,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 8257,
+            "quantum_param_share": 0.0
+          },
+          "input_dim": 256,
+          "qwc_groups": 0
+        }
+      },
+      "matched_assertions": [
+        "A1: vqc_amp_matched == classical_random_quad",
+        "A2: patch_vqc_matched == classical_patch_lowrank (exact 20364 params, batch=64)",
+        "A3: hybrid_vqc_matched == hybrid_noq_matched (exact 5162 params, stabilize+BN)",
+        "A4: qnative_reupload_fidelity (96q/0c) vs classical_trig_net (96c)",
+        "A5: qnative_iqp_kernel == classical_rbf_pca6 == classical_poly2_pca6 (same PCA-6, Val-tuned)"
+      ],
+      "mnist_meta": {
+        "source": "idx",
+        "n_classes": 10,
+        "n_train": 600,
+        "n_val": 200,
+        "n_test": 400,
+        "seed": 2,
+        "disjoint_train_val_test": true,
+        "fallback_reasons": []
+      },
+      "spt_meta": {
+        "hamiltonian": "H = -sum Z_{i-1}X_iZ_{i+1} - h1 sum X_i - h2 sum X_iX_{i+1} (PBC)",
+        "n_qubits": 8,
+        "seed": 2,
+        "train_stats": {
+          "n_samples": 120,
+          "min_gap": 0.0794,
+          "spt_string_order_mean": 0.9795,
+          "non_spt_string_order_mean": 0.2098
+        },
+        "val_stats": {
+          "n_samples": 60,
+          "min_gap": 0.0764,
+          "spt_string_order_mean": 0.9858,
+          "non_spt_string_order_mean": 0.2321
+        },
+        "test_stats": {
+          "n_samples": 120,
+          "min_gap": 0.0851,
+          "spt_string_order_mean": 0.9794,
+          "non_spt_string_order_mean": 0.228
+        }
+      },
+      "seed_seconds": 330.01
+    },
+    {
+      "seed": 3,
+      "track_a": {
+        "classical_random_quad": {
+          "regime": "I_classical",
+          "test_acc": 0.5725,
+          "val_acc": 0.675,
+          "seconds": 2.94,
+          "params": {
+            "total_model_params": 1642,
+            "quantum_params": 0,
+            "classical_wrapper_params": 1642,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 1642,
+            "quantum_param_share": 0.0
+          },
+          "qwc_groups": 0
+        },
+        "vqc_amp_matched": {
+          "regime": "II_classical_on_quantum",
+          "test_acc": 0.73,
+          "test_acc_shots_200": 0.4325,
+          "test_acc_shots_1000": 0.635,
+          "shot_eval_seconds": 2.56,
+          "val_acc": 0.775,
+          "seconds": 94.2,
+          "params": {
+            "total_model_params": 1702,
+            "quantum_params": 60,
+            "classical_wrapper_params": 1642,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 1702,
+            "quantum_param_share": 0.035253
+          },
+          "qwc_groups": 3
+        },
+        "classical_poly2_unscaled": {
+          "regime": "I_classical",
+          "test_acc": 0.8975,
+          "val_acc": 0.88,
+          "selected_C": 5.0,
+          "identical_to_qkernel_amp": true,
+          "seconds": 0.861,
+          "params": {
+            "total_model_params": 0,
+            "quantum_params": 0,
+            "classical_wrapper_params": 0,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 0,
+            "quantum_param_share": 0.0
+          },
+          "qwc_groups": 0
+        },
+        "classical_patch_lowrank": {
+          "regime": "I_classical",
+          "test_acc": 0.855,
+          "val_acc": 0.87,
+          "seconds": 2.65,
+          "params": {
+            "total_model_params": 20364,
+            "quantum_params": 0,
+            "classical_wrapper_params": 20364,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 20364,
+            "quantum_param_share": 0.0
+          },
+          "qwc_groups": 0
+        },
+        "patch_vqc_matched": {
+          "regime": "II_classical_on_quantum",
+          "test_acc": 0.8325,
+          "val_acc": 0.865,
+          "seconds": 77.14,
+          "params": {
+            "total_model_params": 20364,
+            "quantum_params": 48,
+            "classical_wrapper_params": 20316,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 20364,
+            "quantum_param_share": 0.002357
+          },
+          "qwc_groups": 3
+        },
+        "hybrid_vqc_matched": {
+          "regime": "II_classical_on_quantum",
+          "test_acc": 0.8175,
+          "val_acc": 0.78,
+          "seconds": 57.9,
+          "params": {
+            "total_model_params": 5162,
+            "quantum_params": 48,
+            "classical_wrapper_params": 5114,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 5162,
+            "quantum_param_share": 0.009299
+          },
+          "qwc_groups": 3
+        },
+        "hybrid_noq_matched": {
+          "regime": "I_classical",
+          "test_acc": 0.75,
+          "val_acc": 0.74,
+          "seconds": 5.3,
+          "params": {
+            "total_model_params": 5162,
+            "quantum_params": 0,
+            "classical_wrapper_params": 5162,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 5162,
+            "quantum_param_share": 0.0
+          },
+          "qwc_groups": 0
+        },
+        "qnative_reupload_fidelity": {
+          "regime": "III_quantum_native",
+          "test_acc": 0.57,
+          "val_acc": 0.585,
+          "seconds": 28.47,
+          "params": {
+            "total_model_params": 96,
+            "quantum_params": 96,
+            "classical_wrapper_params": 0,
+            "preprocessing_fitted_params": 10192,
+            "effective_total_params": 10288,
+            "quantum_param_share": 1.0
+          },
+          "qwc_groups": 1
+        },
+        "classical_trig_net": {
+          "regime": "I_classical",
+          "test_acc": 0.6025,
+          "val_acc": 0.635,
+          "seconds": 1.54,
+          "params": {
+            "total_model_params": 96,
+            "quantum_params": 0,
+            "classical_wrapper_params": 96,
+            "preprocessing_fitted_params": 10192,
+            "effective_total_params": 10288,
+            "quantum_param_share": 0.0
+          },
+          "qwc_groups": 0
+        },
+        "qnative_iqp_kernel": {
+          "regime": "III_quantum_native",
+          "test_acc": 0.69,
+          "val_acc": 0.71,
+          "selected_alpha": 0.15,
+          "selected_C": 10.0,
+          "concentration_curve": {
+            "0.15": {
+              "offdiag_mean": 0.8768,
+              "best_val_acc": 0.71
+            },
+            "0.25": {
+              "offdiag_mean": 0.4509,
+              "best_val_acc": 0.7
+            },
+            "0.35": {
+              "offdiag_mean": 0.1569,
+              "best_val_acc": 0.68
+            },
+            "0.50": {
+              "offdiag_mean": 0.037,
+              "best_val_acc": 0.68
+            },
+            "0.75": {
+              "offdiag_mean": 0.0184,
+              "best_val_acc": 0.39
+            }
+          },
+          "seconds": 3.15,
+          "params": {
+            "total_model_params": 0,
+            "quantum_params": 0,
+            "classical_wrapper_params": 0,
+            "preprocessing_fitted_params": 5488,
+            "effective_total_params": 5488,
+            "quantum_param_share": 0.0
+          },
+          "qwc_groups": 1
+        },
+        "classical_rbf_pca6": {
+          "regime": "I_classical",
+          "test_acc": 0.72,
+          "val_acc": 0.745,
+          "selected_gamma": 0.1,
+          "selected_C": 20.0,
+          "seconds": 0.743,
+          "params": {
+            "total_model_params": 0,
+            "quantum_params": 0,
+            "classical_wrapper_params": 0,
+            "preprocessing_fitted_params": 5488,
+            "effective_total_params": 5488,
+            "quantum_param_share": 0.0
+          },
+          "qwc_groups": 0
+        },
+        "classical_poly2_pca6": {
+          "regime": "I_classical",
+          "test_acc": 0.735,
+          "val_acc": 0.725,
+          "selected_C": 1.0,
+          "seconds": 0.137,
+          "params": {
+            "total_model_params": 0,
+            "quantum_params": 0,
+            "classical_wrapper_params": 0,
+            "preprocessing_fitted_params": 5488,
+            "effective_total_params": 5488,
+            "quantum_param_share": 0.0
+          },
+          "qwc_groups": 0
+        }
+      },
+      "track_b": {
+        "qcnn_spt": {
+          "regime": "III_quantum_native",
+          "test_acc": 1.0,
+          "test_acc_shots_200": 0.925,
+          "test_acc_shots_1000": 0.9917,
+          "val_acc": 1.0,
+          "seconds": 33.25,
+          "params": {
+            "total_model_params": 36,
+            "quantum_params": 36,
+            "classical_wrapper_params": 0,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 36,
+            "quantum_param_share": 1.0
+          },
+          "qwc_groups": 1
+        },
+        "classical_1body_logreg": {
+          "regime": "I_classical",
+          "test_acc": 0.7583,
+          "val_acc": 0.8333,
+          "seconds": 0.046,
+          "params": {
+            "total_model_params": 25,
+            "quantum_params": 0,
+            "classical_wrapper_params": 25,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 25,
+            "quantum_param_share": 0.0
+          },
+          "input_dim": 24,
+          "qwc_groups": 0
+        },
+        "classical_1body_mlp": {
+          "regime": "I_classical",
+          "test_acc": 0.9167,
+          "val_acc": 0.9,
+          "seconds": 1.87,
+          "params": {
+            "total_model_params": 833,
+            "quantum_params": 0,
+            "classical_wrapper_params": 833,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 833,
+            "quantum_param_share": 0.0
+          },
+          "input_dim": 24,
+          "qwc_groups": 0
+        },
+        "classical_2body_mlp": {
+          "regime": "I_classical",
+          "test_acc": 0.9417,
+          "val_acc": 0.9,
+          "seconds": 1.192,
+          "params": {
+            "total_model_params": 1601,
+            "quantum_params": 0,
+            "classical_wrapper_params": 1601,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 1601,
+            "quantum_param_share": 0.0
+          },
+          "input_dim": 48,
+          "qwc_groups": 0
+        },
+        "classical_full_state_mlp": {
+          "regime": "I_classical",
+          "test_acc": 1.0,
+          "val_acc": 1.0,
+          "seconds": 0.189,
+          "params": {
+            "total_model_params": 8257,
+            "quantum_params": 0,
+            "classical_wrapper_params": 8257,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 8257,
+            "quantum_param_share": 0.0
+          },
+          "input_dim": 256,
+          "qwc_groups": 0
+        }
+      },
+      "matched_assertions": [
+        "A1: vqc_amp_matched == classical_random_quad",
+        "A2: patch_vqc_matched == classical_patch_lowrank (exact 20364 params, batch=64)",
+        "A3: hybrid_vqc_matched == hybrid_noq_matched (exact 5162 params, stabilize+BN)",
+        "A4: qnative_reupload_fidelity (96q/0c) vs classical_trig_net (96c)",
+        "A5: qnative_iqp_kernel == classical_rbf_pca6 == classical_poly2_pca6 (same PCA-6, Val-tuned)"
+      ],
+      "mnist_meta": {
+        "source": "idx",
+        "n_classes": 10,
+        "n_train": 600,
+        "n_val": 200,
+        "n_test": 400,
+        "seed": 3,
+        "disjoint_train_val_test": true,
+        "fallback_reasons": []
+      },
+      "spt_meta": {
+        "hamiltonian": "H = -sum Z_{i-1}X_iZ_{i+1} - h1 sum X_i - h2 sum X_iX_{i+1} (PBC)",
+        "n_qubits": 8,
+        "seed": 3,
+        "train_stats": {
+          "n_samples": 120,
+          "min_gap": 0.0776,
+          "spt_string_order_mean": 0.9827,
+          "non_spt_string_order_mean": 0.2176
+        },
+        "val_stats": {
+          "n_samples": 60,
+          "min_gap": 0.0777,
+          "spt_string_order_mean": 0.981,
+          "non_spt_string_order_mean": 0.2324
+        },
+        "test_stats": {
+          "n_samples": 120,
+          "min_gap": 0.0771,
+          "spt_string_order_mean": 0.9812,
+          "non_spt_string_order_mean": 0.2145
+        }
+      },
+      "seed_seconds": 328.56
+    },
+    {
+      "seed": 4,
+      "track_a": {
+        "classical_random_quad": {
+          "regime": "I_classical",
+          "test_acc": 0.7075,
+          "val_acc": 0.7,
+          "seconds": 2.9,
+          "params": {
+            "total_model_params": 1642,
+            "quantum_params": 0,
+            "classical_wrapper_params": 1642,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 1642,
+            "quantum_param_share": 0.0
+          },
+          "qwc_groups": 0
+        },
+        "vqc_amp_matched": {
+          "regime": "II_classical_on_quantum",
+          "test_acc": 0.765,
+          "test_acc_shots_200": 0.3925,
+          "test_acc_shots_1000": 0.6325,
+          "shot_eval_seconds": 2.36,
+          "val_acc": 0.78,
+          "seconds": 93.1,
+          "params": {
+            "total_model_params": 1702,
+            "quantum_params": 60,
+            "classical_wrapper_params": 1642,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 1702,
+            "quantum_param_share": 0.035253
+          },
+          "qwc_groups": 3
+        },
+        "classical_poly2_unscaled": {
+          "regime": "I_classical",
+          "test_acc": 0.925,
+          "val_acc": 0.93,
+          "selected_C": 5.0,
+          "identical_to_qkernel_amp": true,
+          "seconds": 0.985,
+          "params": {
+            "total_model_params": 0,
+            "quantum_params": 0,
+            "classical_wrapper_params": 0,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 0,
+            "quantum_param_share": 0.0
+          },
+          "qwc_groups": 0
+        },
+        "classical_patch_lowrank": {
+          "regime": "I_classical",
+          "test_acc": 0.8975,
+          "val_acc": 0.87,
+          "seconds": 2.62,
+          "params": {
+            "total_model_params": 20364,
+            "quantum_params": 0,
+            "classical_wrapper_params": 20364,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 20364,
+            "quantum_param_share": 0.0
+          },
+          "qwc_groups": 0
+        },
+        "patch_vqc_matched": {
+          "regime": "II_classical_on_quantum",
+          "test_acc": 0.895,
+          "val_acc": 0.87,
+          "seconds": 77.66,
+          "params": {
+            "total_model_params": 20364,
+            "quantum_params": 48,
+            "classical_wrapper_params": 20316,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 20364,
+            "quantum_param_share": 0.002357
+          },
+          "qwc_groups": 3
+        },
+        "hybrid_vqc_matched": {
+          "regime": "II_classical_on_quantum",
+          "test_acc": 0.835,
+          "val_acc": 0.845,
+          "seconds": 57.23,
+          "params": {
+            "total_model_params": 5162,
+            "quantum_params": 48,
+            "classical_wrapper_params": 5114,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 5162,
+            "quantum_param_share": 0.009299
+          },
+          "qwc_groups": 3
+        },
+        "hybrid_noq_matched": {
+          "regime": "I_classical",
+          "test_acc": 0.8675,
+          "val_acc": 0.885,
+          "seconds": 5.45,
+          "params": {
+            "total_model_params": 5162,
+            "quantum_params": 0,
+            "classical_wrapper_params": 5162,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 5162,
+            "quantum_param_share": 0.0
+          },
+          "qwc_groups": 0
+        },
+        "qnative_reupload_fidelity": {
+          "regime": "III_quantum_native",
+          "test_acc": 0.6325,
+          "val_acc": 0.635,
+          "seconds": 27.23,
+          "params": {
+            "total_model_params": 96,
+            "quantum_params": 96,
+            "classical_wrapper_params": 0,
+            "preprocessing_fitted_params": 10192,
+            "effective_total_params": 10288,
+            "quantum_param_share": 1.0
+          },
+          "qwc_groups": 1
+        },
+        "classical_trig_net": {
+          "regime": "I_classical",
+          "test_acc": 0.6475,
+          "val_acc": 0.69,
+          "seconds": 0.58,
+          "params": {
+            "total_model_params": 96,
+            "quantum_params": 0,
+            "classical_wrapper_params": 96,
+            "preprocessing_fitted_params": 10192,
+            "effective_total_params": 10288,
+            "quantum_param_share": 0.0
+          },
+          "qwc_groups": 0
+        },
+        "qnative_iqp_kernel": {
+          "regime": "III_quantum_native",
+          "test_acc": 0.74,
+          "val_acc": 0.755,
+          "selected_alpha": 0.25,
+          "selected_C": 20.0,
+          "concentration_curve": {
+            "0.15": {
+              "offdiag_mean": 0.8766,
+              "best_val_acc": 0.72
+            },
+            "0.25": {
+              "offdiag_mean": 0.4529,
+              "best_val_acc": 0.755
+            },
+            "0.35": {
+              "offdiag_mean": 0.1476,
+              "best_val_acc": 0.73
+            },
+            "0.50": {
+              "offdiag_mean": 0.0375,
+              "best_val_acc": 0.72
+            },
+            "0.75": {
+              "offdiag_mean": 0.0186,
+              "best_val_acc": 0.41
+            }
+          },
+          "seconds": 3.95,
+          "params": {
+            "total_model_params": 0,
+            "quantum_params": 0,
+            "classical_wrapper_params": 0,
+            "preprocessing_fitted_params": 5488,
+            "effective_total_params": 5488,
+            "quantum_param_share": 0.0
+          },
+          "qwc_groups": 1
+        },
+        "classical_rbf_pca6": {
+          "regime": "I_classical",
+          "test_acc": 0.775,
+          "val_acc": 0.745,
+          "selected_gamma": 0.1,
+          "selected_C": 5.0,
+          "seconds": 0.846,
+          "params": {
+            "total_model_params": 0,
+            "quantum_params": 0,
+            "classical_wrapper_params": 0,
+            "preprocessing_fitted_params": 5488,
+            "effective_total_params": 5488,
+            "quantum_param_share": 0.0
+          },
+          "qwc_groups": 0
+        },
+        "classical_poly2_pca6": {
+          "regime": "I_classical",
+          "test_acc": 0.755,
+          "val_acc": 0.73,
+          "selected_C": 5.0,
+          "seconds": 0.128,
+          "params": {
+            "total_model_params": 0,
+            "quantum_params": 0,
+            "classical_wrapper_params": 0,
+            "preprocessing_fitted_params": 5488,
+            "effective_total_params": 5488,
+            "quantum_param_share": 0.0
+          },
+          "qwc_groups": 0
+        }
+      },
+      "track_b": {
+        "qcnn_spt": {
+          "regime": "III_quantum_native",
+          "test_acc": 0.9917,
+          "test_acc_shots_200": 0.925,
+          "test_acc_shots_1000": 0.9917,
+          "val_acc": 1.0,
+          "seconds": 33.33,
+          "params": {
+            "total_model_params": 36,
+            "quantum_params": 36,
+            "classical_wrapper_params": 0,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 36,
+            "quantum_param_share": 1.0
+          },
+          "qwc_groups": 1
+        },
+        "classical_1body_logreg": {
+          "regime": "I_classical",
+          "test_acc": 0.75,
+          "val_acc": 0.7167,
+          "seconds": 0.067,
+          "params": {
+            "total_model_params": 25,
+            "quantum_params": 0,
+            "classical_wrapper_params": 25,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 25,
+            "quantum_param_share": 0.0
+          },
+          "input_dim": 24,
+          "qwc_groups": 0
+        },
+        "classical_1body_mlp": {
+          "regime": "I_classical",
+          "test_acc": 0.9,
+          "val_acc": 0.9167,
+          "seconds": 1.752,
+          "params": {
+            "total_model_params": 833,
+            "quantum_params": 0,
+            "classical_wrapper_params": 833,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 833,
+            "quantum_param_share": 0.0
+          },
+          "input_dim": 24,
+          "qwc_groups": 0
+        },
+        "classical_2body_mlp": {
+          "regime": "I_classical",
+          "test_acc": 0.9417,
+          "val_acc": 0.9833,
+          "seconds": 1.281,
+          "params": {
+            "total_model_params": 1601,
+            "quantum_params": 0,
+            "classical_wrapper_params": 1601,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 1601,
+            "quantum_param_share": 0.0
+          },
+          "input_dim": 48,
+          "qwc_groups": 0
+        },
+        "classical_full_state_mlp": {
+          "regime": "I_classical",
+          "test_acc": 1.0,
+          "val_acc": 1.0,
+          "seconds": 0.184,
+          "params": {
+            "total_model_params": 8257,
+            "quantum_params": 0,
+            "classical_wrapper_params": 8257,
+            "preprocessing_fitted_params": 0,
+            "effective_total_params": 8257,
+            "quantum_param_share": 0.0
+          },
+          "input_dim": 256,
+          "qwc_groups": 0
+        }
+      },
+      "matched_assertions": [
+        "A1: vqc_amp_matched == classical_random_quad",
+        "A2: patch_vqc_matched == classical_patch_lowrank (exact 20364 params, batch=64)",
+        "A3: hybrid_vqc_matched == hybrid_noq_matched (exact 5162 params, stabilize+BN)",
+        "A4: qnative_reupload_fidelity (96q/0c) vs classical_trig_net (96c)",
+        "A5: qnative_iqp_kernel == classical_rbf_pca6 == classical_poly2_pca6 (same PCA-6, Val-tuned)"
+      ],
+      "mnist_meta": {
+        "source": "idx",
+        "n_classes": 10,
+        "n_train": 600,
+        "n_val": 200,
+        "n_test": 400,
+        "seed": 4,
+        "disjoint_train_val_test": true,
+        "fallback_reasons": []
+      },
+      "spt_meta": {
+        "hamiltonian": "H = -sum Z_{i-1}X_iZ_{i+1} - h1 sum X_i - h2 sum X_iX_{i+1} (PBC)",
+        "n_qubits": 8,
+        "seed": 4,
+        "train_stats": {
+          "n_samples": 120,
+          "min_gap": 0.0797,
+          "spt_string_order_mean": 0.9814,
+          "non_spt_string_order_mean": 0.1957
+        },
+        "val_stats": {
+          "n_samples": 60,
+          "min_gap": 0.0787,
+          "spt_string_order_mean": 0.9748,
+          "non_spt_string_order_mean": 0.211
+        },
+        "test_stats": {
+          "n_samples": 120,
+          "min_gap": 0.076,
+          "spt_string_order_mean": 0.9806,
+          "non_spt_string_order_mean": 0.2268
+        }
+      },
+      "seed_seconds": 326.15
+    }
+  ],
+  "wall_seconds": 338.82
+}

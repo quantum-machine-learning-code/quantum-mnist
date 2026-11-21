@@ -14,15 +14,23 @@ import torch
 
 from qml_lab.data import (
     fetch_mnist_raw, l2_normalize, load_mnist,
-    load_mnist_images, load_mnist_raw, stratified_subset,
+    load_mnist_images, load_mnist_raw, load_mnist_tvt, stratified_subset,
 )
 from qml_lab.models import (
-    AmplitudeVQCClassifier, CNNClassifier, HybridCNNClassifier,
-    HybridRichClassifier, MLPClassifier, PatchVQCClassifier,
-    RichVQCClassifier, VQCClassifier,
+    AmplitudeVQCClassifier, ClassicalTrigNet, CNNClassifier,
+    DataReuploadingFidelityClassifier, HybridCNNClassifier,
+    HybridRichClassifier, MLPClassifier, PatchLowRankClassifier,
+    PatchVQCClassifier, RandomQuadraticClassifier, RichVQCClassifier,
+    VQCClassifier, assert_matched_config, parameter_breakdown,
 )
 from qml_lab.quantum import (
-    make_amplitude_layer, make_rich_layer, n_quantum_params, n_readout,
+    count_qwc_groups, evaluate_rich_layer_shots, iqp_feature_states,
+    iqp_kernel_matrix, make_amplitude_layer, make_rich_layer,
+    n_quantum_params, n_readout,
+)
+from qml_lab.quantum_phases import (
+    QCNNPhaseClassifier, cluster_ising_ground_state,
+    generate_cluster_ising_dataset,
 )
 from qml_lab.train import train_classifier
 from qml_lab.utils import set_seed
@@ -308,14 +316,171 @@ def check_patch_vqc_and_sampling() -> None:
     assert np.allclose(np.linalg.norm(Xn, axis=1), 1.0, atol=1e-5)
 
 
+def check_p0_fixes_and_contracts() -> None:
+    """P0 数学/控制变量/QWC 回归断言：
+    1. AngleEmbedding(RY) 解析保真度核 prod cos^2((x-x')/2) 与 PennyLane default.qubit 误差 < 1e-12；
+    2. resolve_open_issues.py 使用修正后的 * 0.5（非旧版错误的 * 0.25）；
+    3. load_mnist(standardize_per_pc=True) 消除全局标量 min-max 偏移，逐 PC 均值近似 0 且落在 [-pi/2, pi/2]；
+    4. HybridRichClassifier(quantum=False, stabilize=True) 保留 post_norm 且支持 match_readout_dim=True；
+    5. HybridRichClassifier(..., trainable_reupload=True) 禁用内层 bound_inputs 避免双重 tanh；
+    6. RichVQCClassifier.post_bn 与向后兼容别名 post_ln 一致；
+    7. count_qwc_groups 与 parameter_breakdown / assert_matched_config 契约。
+    """
+    import pennylane as qml
+
+    # 1. Exact AngleEmbedding(RY) fidelity kernel verification (< 1e-12)
+    dev = qml.device("default.qubit", wires=4)
+
+    @qml.qnode(dev)
+    def _angle_state(x):
+        qml.AngleEmbedding(x, wires=range(4), rotation="Y")
+        return qml.state()
+
+    rng = np.random.default_rng(7)
+    x1 = rng.uniform(-np.pi, np.pi, size=4)
+    x2 = rng.uniform(-np.pi, np.pi, size=4)
+    exact_fid = float(np.abs(np.vdot(_angle_state(x1), _angle_state(x2))) ** 2)
+    analytic_fid = float(np.prod(np.cos((x1 - x2) * 0.5) ** 2))
+    assert abs(exact_fid - analytic_fid) < 1e-12, f"Angle kernel mismatch: {exact_fid} vs {analytic_fid}"
+
+    # Verify resolve_open_issues.py uses * 0.5 (not * 0.25)
+    roi_src = (ROOT / "experiments" / "resolve_open_issues.py").read_text(encoding="utf-8")
+    assert "(Xps[:, None, :] - Xps[None, :, :]) * 0.5" in roi_src
+    assert "(Xpst[:, None, :] - Xps[None, :, :]) * 0.5" in roi_src
+    assert "* 0.25" not in roi_src
+
+    # Verify audit_round8.py uses batch_size=64 and no_decay_modules parity
+    aud_src = (ROOT / "experiments" / "audit_round8.py").read_text(encoding="utf-8")
+    assert "batch_size=64" in aud_src and 'no_decay_modules=("proj",)' in aud_src
+
+    # 2. Per-PC standardization removes global min-max phase shift
+    X_std, _, Xt_std, _, meta_std = load_mnist(
+        n_train=60, n_test=20, n_features=6, classes=3,
+        source="synthetic", seed=0, standardize_per_pc=True,
+    )
+    assert meta_std["standardize_per_pc"] is True
+    assert bool((X_std >= -np.pi / 2.0 - 1e-5).all() and (X_std <= np.pi / 2.0 + 1e-5).all())
+    assert bool((Xt_std >= -np.pi / 2.0 - 1e-5).all() and (Xt_std <= np.pi / 2.0 + 1e-5).all())
+    assert float(np.max(np.abs(X_std.mean(axis=0)))) < 0.25, "逐主成分标准化后均值应接近 0"
+
+    # 3. HybridRichClassifier quantum=False + stabilize=True + double-tanh guard
+    set_seed(0)
+    hyb_noq = HybridRichClassifier(
+        n_qubits=4, n_classes=2, n_layers=2, hidden=8,
+        quantum=False, head="mlp", scale=1.0, frontend="light",
+        observables="z+x+y+zz", stabilize=True, match_readout_dim=True,
+    )
+    assert hyb_noq.post_norm is not None, "quantum=False + stabilize=True 必须保留 post_norm"
+    assert hyb_noq.readout_dim == n_readout(4, "z+x+y+zz")
+    xb_img = torch.rand(4, 1, 28, 28)
+    out_noq = hyb_noq(xb_img)
+    assert tuple(out_noq.shape) == (4, 2)
+    out_noq.sum().backward()
+
+    set_seed(0)
+    hyb_reup = HybridRichClassifier(
+        n_qubits=4, n_classes=2, n_layers=2, hidden=8,
+        quantum=True, head="mlp", scale=1.0, frontend="light",
+        observables="z", trainable_reupload=True, stabilize=True,
+    )
+    assert hyb_reup.q.bound_inputs is False, "HybridRichClassifier 已做 tanh*pi/2，不得双重 tanh 压缩"
+
+    # 4. RichVQCClassifier.post_bn and backward-compat alias post_ln
+    rv = RichVQCClassifier(4, 2, 1, "amplitude", "z", n_features=16, post_norm=True)
+    assert rv.post_bn is not None and rv.post_ln is rv.post_bn
+
+    # 5. QWC grouping contract & parameter_breakdown / assert_matched_config
+    assert count_qwc_groups(10, "z") == 1
+    assert count_qwc_groups(10, "z+x") == 2
+    assert count_qwc_groups(10, "z+x+y+zz") == 3
+    assert count_qwc_groups(10, "z+x+y+zzall+xxall+yyall") == 3
+
+    pb_q = parameter_breakdown(rv, preprocessing_params=0)
+    assert pb_q["quantum_params"] == n_quantum_params(4, 1)
+    assert pb_q["quantum_params"] + pb_q["classical_wrapper_params"] == pb_q["total_model_params"]
+    pb_pca = parameter_breakdown(MLPClassifier(10, 2, 8), preprocessing_params=784 + 10 * 784)
+    assert pb_pca["preprocessing_fitted_params"] == 8624
+    assert pb_pca["effective_total_params"] == pb_pca["total_model_params"] + 8624
+
+    assert_matched_config({"bs": 64, "lr": 0.01}, {"bs": 64, "lr": 0.01}, ("bs", "lr"))
+    raised = False
+    try:
+        assert_matched_config({"bs": 64}, {"bs": 32}, ("bs",))
+    except AssertionError:
+        raised = True
+    assert raised, "assert_matched_config 应对不匹配配置抛出 AssertionError"
+
+
+def check_quantum_native_and_three_regimes() -> None:
+    """验证 Regime I 去量子化对照、有限 shots 采样、IQP 核、深度重上传与 Track B Cluster-Ising QCNN。"""
+    # 1. Disjoint TVT loader
+    tvt = load_mnist_tvt(24, 12, 12, classes=3, source="synthetic", seed=0, pca_dims=(4, 6))
+    assert tvt["raw"]["X_train"].shape == (24, 784)
+    assert tvt["pca"][4]["X_val"].shape == (12, 4)
+    assert tvt["pca"][6]["preprocessing_fitted_params"] == 784 + 6 * 784
+
+    # 2. RandomQuadratic & PatchLowRank parameter parity
+    set_seed(0)
+    rq = RandomQuadraticClassifier(16, 16, 3, head="mlp", scale=5.0, hidden=8)
+    xr = torch.randn(4, 16)
+    xr = xr / xr.norm(dim=1, keepdim=True)
+    out_rq = rq(xr)
+    assert tuple(out_rq.shape) == (4, 3)
+    out_rq.sum().backward()
+
+    set_seed(0)
+    pl = PatchLowRankClassifier(14, 7, 28, 10, 32, 48, True, "mlp", 1.0, 64, 0.1)
+    set_seed(0)
+    pv = PatchVQCClassifier(8, 10, 2, 14, 7, 28, "z+x+y+zz", True, head="mlp", scale=1.0, hidden=64, dropout=0.1)
+    assert parameter_breakdown(pl)["total_model_params"] == parameter_breakdown(pv)["total_model_params"] == 20364
+
+    # 3. Finite-shot QWC evaluation
+    rv4 = RichVQCClassifier(4, 2, 1, "amplitude", "z+x+y+zz", n_features=16, head="mlp", hidden=8)
+    z_sh = evaluate_rich_layer_shots(rv4.q.layer.weights, xr, n_qubits=4, observables="z+x+y+zz", shots=50, seed=0)
+    assert tuple(z_sh.shape) == (4, 16) and bool(torch.isfinite(z_sh).all())
+
+    # 4. Regime III on classical data: DataReuploadingFidelityClassifier (0 classical wrapper params) + ClassicalTrigNet
+    reup = DataReuploadingFidelityClassifier(n_qubits=2, n_layers=2, n_classes=3)
+    pb_reup = parameter_breakdown(reup)
+    assert pb_reup["classical_wrapper_params"] == 0 and pb_reup["quantum_param_share"] == 1.0
+    x6 = torch.randn(4, 6)
+    p_born = reup.born_probs(x6)
+    assert torch.allclose(p_born.sum(dim=-1), torch.ones(4), atol=1e-5)
+    reup(x6).sum().backward()
+    trig = ClassicalTrigNet(6, 3, n_freqs=2, bias=False)
+    trig(x6).sum().backward()
+
+    # 5. Regime III entangling IQP kernel (real PennyLane states)
+    s_tr = iqp_feature_states(tvt["pca"][4]["X_train"][:8], n_qubits=4, alpha=0.3, reps=2)
+    K = iqp_kernel_matrix(s_tr, s_tr)
+    assert K.shape == (8, 8) and np.allclose(np.diag(K), 1.0, atol=1e-10)
+    assert np.allclose(K, K.T, atol=1e-10)
+
+    # 6. Track B: 1D Cluster-Ising exact ground state + Cong-et-al. QCNN (0 classical params)
+    psi_spt, gap_spt, s_spt = cluster_ising_ground_state(0.0, 0.0, n_qubits=4)
+    assert np.isclose(np.linalg.norm(psi_spt), 1.0, atol=1e-5)
+    assert gap_spt > 1.5 and s_spt > 0.99
+    ds = generate_cluster_ising_dataset(n_train=12, n_val=6, n_test=6, n_qubits=4, seed=0)
+    qcnn = QCNNPhaseClassifier(n_qubits=4)
+    pb_qcnn = parameter_breakdown(qcnn)
+    assert pb_qcnn["classical_wrapper_params"] == 0 and pb_qcnn["quantum_param_share"] == 1.0
+    st = torch.as_tensor(ds["states"]["X_train"][:4], dtype=torch.float32)
+    pb_out = qcnn.born_probs(st)
+    assert torch.allclose(pb_out.sum(dim=-1), torch.ones(4), atol=1e-5)
+    qcnn(st).sum().backward()
+    sh_acc = qcnn.evaluate_finite_shots(ds["states"]["X_test"], ds["y_test"], shots=50, seed=0)
+    assert 0.0 <= sh_acc <= 1.0
+
+
 def check_quick_scripts() -> None:
-    """验证 probe_information.py、classical_budget.py 与 resolve_open_issues.py 的 --quick 契约不报错且不污染 docs/ 或 results/。"""
+    """验证 probe_information.py、classical_budget.py、resolve_open_issues.py 与 benchmark_three_regimes.py 的 --quick 契约。"""
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
         for script, expected_name in [
             ("experiments/probe_information.py", "quick_info_metrics.json"),
             ("experiments/classical_budget.py", "quick_budget_metrics.json"),
             ("experiments/resolve_open_issues.py", "quick_open_issues_metrics.json"),
+            ("experiments/benchmark_three_regimes.py", "quick_three_regimes_metrics.json"),
         ]:
             cmd = [sys.executable, str(ROOT / script), "--quick", "--out", tmpdir]
             if "resolve_open_issues" in script:
@@ -332,6 +497,8 @@ test_heads_and_controls = check_heads_and_controls
 test_hybrid_and_images = check_hybrid_and_images
 test_readout_layers = check_readout_layers
 test_patch_vqc_and_sampling = check_patch_vqc_and_sampling
+test_p0_fixes_and_contracts = check_p0_fixes_and_contracts
+test_quantum_native_and_three_regimes = check_quantum_native_and_three_regimes
 test_quick_scripts = check_quick_scripts
 
 
@@ -341,6 +508,8 @@ def main() -> None:
     check_hybrid_and_images()
     check_readout_layers()
     check_patch_vqc_and_sampling()
+    check_p0_fixes_and_contracts()
+    check_quantum_native_and_three_regimes()
     check_quick_scripts()
     print("SMOKE OK")
 
