@@ -32,6 +32,13 @@ from qml_lab.quantum_phases import (
     QCNNPhaseClassifier, cluster_ising_ground_state,
     generate_cluster_ising_dataset,
 )
+from qml_lab.hardware_topology import (
+    TOPOLOGY_NAMES, build_coupling_graph, evaluate_routed_iqp_density_matrices,
+    evaluate_routed_qcnn_mixed, execute_gates_statevector,
+    extract_iqp_kernel_gates, extract_patch_vqc_gates, extract_qcnn_spt_gates,
+    extract_qft_gates, extract_vqc_amp_gates, hilbert_schmidt_kernel_matrix,
+    route_circuit_to_topology, simulate_routed_qcnn_forward_mixed,
+)
 from qml_lab.train import train_classifier
 from qml_lab.utils import set_seed
 
@@ -472,8 +479,93 @@ def check_quantum_native_and_three_regimes() -> None:
     assert 0.0 <= sh_acc <= 1.0
 
 
+def check_hardware_topology() -> None:
+    """验证 4 种硬件耦合拓扑、双向 SABRE SWAP 路由保真度与 PennyLane default.mixed 精确性。"""
+    import networkx as nx
+
+    # 1. 耦合图不变量：全部连通，heavy_hex 严格 max_degree <= 3
+    for nq in (4, 6, 8, 10):
+        for topo in TOPOLOGY_NAMES:
+            graph = build_coupling_graph(topo, nq)
+            assert nx.is_connected(graph), f"{topo} (n={nq}) 必须连通"
+            if topo == "heavy_hex":
+                assert max(dict(graph.degree()).values()) <= 3, f"heavy_hex (n={nq}) 最大度超过 3"
+            elif topo == "linear_chain":
+                assert max(dict(graph.degree()).values()) <= 2
+            elif topo == "grid_2d":
+                assert max(dict(graph.degree()).values()) <= 4
+
+    # 2. 路由后的线路在全部 4 种拓扑上必须严格保持无噪态向量（< 1e-10），all_to_all 零 SWAP，
+    #    且输出的每条物理 2Q 门严格落在耦合图边集内。
+    rng = np.random.default_rng(19)
+    x4 = rng.uniform(-1.0, 1.0, size=4)
+    test_circuits = [
+        ("vqc_amp", 4, extract_vqc_amp_gates(4, 2)),
+        ("patch_vqc", 4, extract_patch_vqc_gates(4, 2)),
+        ("iqp", 4, extract_iqp_kernel_gates(4, 2, alpha=0.25, x=x4, full_entanglement=True)),
+        ("qcnn_spt", 4, extract_qcnn_spt_gates(4)),
+        ("qft", 4, extract_qft_gates(4)),
+    ]
+    psi4 = rng.normal(size=16) + 1j * rng.normal(size=16)
+    psi4 = psi4 / np.linalg.norm(psi4)
+
+    for cname, nq, gates in test_circuits:
+        init_st = None if cname == "iqp" else psi4
+        ref_sv = execute_gates_statevector(gates, nq, initial_state=init_st)
+        for topo in TOPOLOGY_NAMES:
+            graph = build_coupling_graph(topo, nq)
+            res = route_circuit_to_topology(gates, graph, nq)
+            if topo == "all_to_all":
+                assert res["inserted_swaps"] == 0, f"{cname} 在 all_to_all 不应插入 SWAP"
+            for gate in res["routed_gates"]:
+                if len(gate.wires) == 2:
+                    assert graph.has_edge(gate.wires[0], gate.wires[1]), (
+                        f"物理 2Q 门 {gate.wires} 不在 {topo} 边集中"
+                    )
+            routed_sv = execute_gates_statevector(
+                res["routed_gates"], nq,
+                initial_state=init_st,
+                initial_layout=res["initial_layout"],
+                final_layout=res["final_layout"],
+            )
+            err = float(np.max(np.abs(ref_sv - routed_sv)))
+            assert err < 1e-10, f"{cname}/{topo} 路由无噪态向量误差 {err} >= 1e-10"
+
+    # 3. default.mixed 在 p_2q=0 严格匹配 default.qubit（< 1e-10），且海森堡与前向含噪一致
+    g_hh4 = build_coupling_graph("heavy_hex", 4)
+    qcnn4_gates = extract_qcnn_spt_gates(4)
+    routed_qcnn4 = route_circuit_to_topology(qcnn4_gates, g_hh4, 4)
+    st_batch = rng.normal(size=(3, 16))
+    st_batch = st_batch / np.linalg.norm(st_batch, axis=1, keepdims=True)
+    ref_probs = []
+    for st in st_batch:
+        sv = execute_gates_statevector(qcnn4_gates, 4, initial_state=st)
+        p0 = float(np.sum(np.abs(sv[:8]) ** 2))
+        ref_probs.append([p0, 1.0 - p0])
+    ref_probs_arr = np.asarray(ref_probs, dtype=np.float64)
+    mix_fwd0 = simulate_routed_qcnn_forward_mixed(routed_qcnn4, st_batch, 4, p_2q=0.0, p_ro=0.0)
+    mix_heis0 = evaluate_routed_qcnn_mixed(routed_qcnn4, st_batch, 4, p_2q=0.0, p_ro=0.0)
+    assert float(np.max(np.abs(mix_fwd0 - ref_probs_arr))) < 1e-10
+    assert float(np.max(np.abs(mix_heis0 - ref_probs_arr))) < 1e-10
+
+    mix_fwd_noisy = simulate_routed_qcnn_forward_mixed(routed_qcnn4, st_batch[:1], 4, p_2q=0.01, p_ro=0.01)
+    mix_heis_noisy = evaluate_routed_qcnn_mixed(routed_qcnn4, st_batch[:1], 4, p_2q=0.01, p_ro=0.01)
+    assert float(np.max(np.abs(mix_fwd_noisy - mix_heis_noisy))) < 1e-10
+
+    iqp4_sym = extract_iqp_kernel_gates(4, 2, alpha=0.25, x=None, full_entanglement=True)
+    routed_iqp4 = route_circuit_to_topology(iqp4_sym, g_hh4, 4)
+    X4 = rng.uniform(-1.0, 1.0, size=(4, 4))
+    rhos0 = evaluate_routed_iqp_density_matrices(routed_iqp4, X4, 4, alpha=0.25, p_2q=0.0)
+    K_mix0 = hilbert_schmidt_kernel_matrix(rhos0, rhos0)
+    svs4 = np.asarray(
+        [execute_gates_statevector(extract_iqp_kernel_gates(4, 2, 0.25, row, True), 4) for row in X4]
+    )
+    K_qubit0 = np.abs(svs4 @ svs4.conj().T) ** 2
+    assert float(np.max(np.abs(K_mix0 - K_qubit0))) < 1e-10
+
+
 def check_quick_scripts() -> None:
-    """验证 probe_information.py、classical_budget.py、resolve_open_issues.py 与 benchmark_three_regimes.py 的 --quick 契约。"""
+    """验证各基准脚本的 --quick 契约（仅写入临时 --out 目录，不覆盖 docs/）。"""
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
         for script, expected_name in [
@@ -481,6 +573,7 @@ def check_quick_scripts() -> None:
             ("experiments/classical_budget.py", "quick_budget_metrics.json"),
             ("experiments/resolve_open_issues.py", "quick_open_issues_metrics.json"),
             ("experiments/benchmark_three_regimes.py", "quick_three_regimes_metrics.json"),
+            ("experiments/benchmark_hardware_topology.py", "quick_hardware_topology_metrics.json"),
         ]:
             cmd = [sys.executable, str(ROOT / script), "--quick", "--out", tmpdir]
             if "resolve_open_issues" in script:
@@ -499,6 +592,7 @@ test_readout_layers = check_readout_layers
 test_patch_vqc_and_sampling = check_patch_vqc_and_sampling
 test_p0_fixes_and_contracts = check_p0_fixes_and_contracts
 test_quantum_native_and_three_regimes = check_quantum_native_and_three_regimes
+test_hardware_topology = check_hardware_topology
 test_quick_scripts = check_quick_scripts
 
 
@@ -510,6 +604,7 @@ def main() -> None:
     check_patch_vqc_and_sampling()
     check_p0_fixes_and_contracts()
     check_quantum_native_and_three_regimes()
+    check_hardware_topology()
     check_quick_scripts()
     print("SMOKE OK")
 

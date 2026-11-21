@@ -16,6 +16,7 @@ dependencies = [
     "scikit-learn>=1.4",
     "scipy>=1.11",
     "numpy>=1.26",
+    "networkx>=3.0",
     "matplotlib>=3.8",
     "tqdm>=4.66",
 ]
