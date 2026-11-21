@@ -2,6 +2,22 @@
 
 All notable changes to `quantum-mnist` will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- Fixed 2× angle error in `experiments/resolve_open_issues.py` (`qkernel_angle`: `* 0.25 -> * 0.5`, exact `RY` fidelity $\prod_i \cos^2((x_i-x'_i)/2)$, verified `< 1e-12` against `default.qubit`).
+- Added `standardize_per_pc=True` (`tanh(z)*(pi/2)`) to `qml_lab/data.py::load_mnist` eliminating the global scalar min-max `-0.815 rad` shift across PCA components, plus strictly disjoint `load_mnist_tvt`.
+- Fixed `HybridRichClassifier` (`qml_lab/models.py`) so `quantum=False, stabilize=True` retains `post_norm = BatchNorm1d(dim)` and supports parameter/width-matched `match_readout_dim=True`; guarded against double-`tanh` squashing with `trainable_reupload=True`; renamed misnamed `RichVQCClassifier.post_ln` to `post_bn` (with backward-compatible alias).
+- Fixed `experiments/audit_round8.py` `PatchLinearClassifier` parity with `PatchVQC` (`batch_size=64` and `no_decay_modules=("proj",)` via `qml_lab/train.py`) and refreshed `docs/audit_metrics.json`.
+- Corrected 5 mismatched per-seed rows and QSVC runtimes in `docs/REVIEW.md` §14 to match `docs/open_issues_metrics.json` verbatim, and added an explicit archival note for `docs/full_metrics.json`.
+
+### Added
+- Programmatic `count_qwc_groups`, finite-shot QWC evaluation (`evaluate_rich_layer_shots`), and real PennyLane entangling IQP feature-map kernel (`iqp_feature_states` / `iqp_kernel_matrix`) in `qml_lab/quantum.py`.
+- `parameter_breakdown`, `assert_matched_config`, dequantized classical surrogates (`RandomQuadraticClassifier`, `PatchLowRankClassifier`, `ClassicalTrigNet`), and zero-wrapper `DataReuploadingFidelityClassifier` in `qml_lab/models.py`.
+- Native quantum-state benchmark module `qml_lab/quantum_phases.py` implementing 1D Cluster-Ising ($n=8$ PBC) exact sparse diagonalization and a true Cong-et-al. `QCNNPhaseClassifier` (36 quantum params, 0 classical MLP params, 1 QWC basis).
+- Controlled Three-Regime benchmark `experiments/benchmark_three_regimes.py` (`docs/three_regimes_metrics.json`) with strict Train/Val/Test splits, 5 seeds, finite-shot checks, and Holm-Bonferroni correction, plus regression tests in `tests/smoke_test.py`.
+- Concise, 100%-synced bilingual [`README.md`](README.md) and [`README_EN.md`](README_EN.md).
+
 ## [0.2.0] - 2026-11-14
 
 ### Added

@@ -1,4 +1,4 @@
-# Quantum MNIST
+# Quantum MNIST · Controlled Three-Regime QML Benchmark
 
 English | [简体中文](README.md)
 
@@ -8,125 +8,95 @@ English | [简体中文](README.md)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Hardware](https://img.shields.io/badge/quantum%20hardware-not%20required-success)
 
-> Variational quantum circuits (VQCs) vs. input-matched / parameter-matched / data-budget-matched classical MLPs, CNNs, and classical quadratic kernels on MNIST. **Reproducible, pure state-vector simulation, no quantum hardware required.**
-
-This repository focuses solely on quantum machine learning benchmarks for MNIST handwritten digit classification. The sister repository [quantum-llm](https://github.com/quantum-machine-learning-code/quantum-llm) studies modular addition and toy character-level language models; both codebases are self-contained.
+> A strictly controlled benchmark separating **(I) Classical algorithms on classical compute**, **(II) Classical templates ported onto quantum circuits**, and **(III) Quantum-native algorithms on quantum circuits** across both classical images (MNIST) and native entangled quantum states (1D Cluster-Ising SPT phases). **Pure simulation, zero test peeking, full parameter accounting, real finite-shot evaluation.**
 
 ---
 
-## Executive Summary (2026-11-07 · Rounds 1–8 Including Full 60k/10k MNIST)
+## At a Glance: Research Question ↔ Experiment ↔ Verdict
 
-> **External Audit Note (2026-11-07 · [REVIEW.md §15](docs/REVIEW.md), [`audit_round8.py`](experiments/audit_round8.py), [`docs/audit_metrics.json`](docs/audit_metrics.json))**: Round-8 numbers are bitwise reproducible, with three tightened interpretations:
-> 1. `qkernel_amp` (`0.9210`) is **seed-for-seed identical to a classical quadratic kernel without `StandardScaler`** (`qkernel_patch` `0.9310` likewise has an exact classical quadratic computation) and must not be conflated with end-to-end quantum models.
-> 2. Replacing the 8-qubit shared circuit in `PatchVQC` (`0.8800 ± 0.0112`) with a classical `Linear(196, 32) + Tanh` block while keeping everything else unchanged gives **`0.8920 ± 0.0067`** (paired `+1.20 pt`, CI crosses zero, ~50× faster) — confirming the gain comes from the 2D local-patch inductive bias rather than a verifiable quantum contribution.
-> 3. After Bonferroni correction across the 20 Round-8 paired tests, **2/20** remain significant (down from 13/20 uncorrected). Moreover, kernel seeds reflect dataset resampling whereas VQC seeds reflect model initialization/batch shuffle, so the two families cannot be paired cross-group.
-
-All small-sample tables below use real MNIST IDX images (10 classes, 200 fixed test images, **5 seeds**, Python 3.13 / PennyLane 0.45.1 / PyTorch 2.15 CPU), archived in `docs/*_metrics.json`. **Round 7** evaluates on the full **60,000 train / 10,000 test** split (3 epochs, batch 128, 3 seeds, `default.qubit + backprop`), which is not directly comparable digit-for-digit to the 200-image test splits.
-
-### Full MNIST (Round 7, 2026-11-06 · 60,000 Train / 10,000 Test, 3 Seeds)
-
-| Model | Parameters | Full Test Accuracy (3 seeds) | Time / seed |
-| --- | --- | --- | --- |
-| **Amp10 / 165-dim readout (Quantum)** | 5,702 | **`0.9421 ± 0.0008`** | 2,462–2,654 s |
-| Amp10 / 40-dim readout (Quantum) | 1,702 | `0.9014 ± 0.0020` | 633–637 s |
-| Classical PCA-165 + Matched MLP Head | 5,642 | **`0.9554 ± 0.0028`** | 2.2–2.4 s |
-| Classical MLP-784 | 25,450 | `0.9546 ± 0.0012` | 2.8–2.9 s |
-| Frozen random unitary 165-dim readout + sklearn probe | — | `0.9440` (`logreg 0.9027` / `MLP 0.9440`) | 634 s |
-
-- Full-scale data raises 165-dim amplitude VQC from `0.8450` (600 train, 200 test) to **`0.9421 ± 0.0008`**, narrowing the gap with matched classical PCA-165 (`0.9554`) to **`1.33 pt`** (paired 95% CI `[+0.45, +2.20] pt`, 3/3 seeds in favor of classical) at ~**1,000×** higher runtime. **No quantum advantage is claimed.**
-- `lightning.qubit` did not support `backprop` on this circuit and `adjoint` ran at 11.9 samples/s vs. 98.8 samples/s on `default.qubit`.
-
-### Small-Sample Benchmarks (Rounds 1–5 & 8 · 200 Test Images, 5 Seeds)
-
-| Model | Train Images | Parameters | Test Accuracy (5 seeds) | Time / seed |
-| --- | --- | --- | --- | --- |
-| Legacy baseline: Angle-4 + Linear head | 600 | 74 | `0.4320 ± 0.0375` | 16.1 s |
-| Round 2: Amp10 + MLP ×5 (`PauliZ` only) | 600 | 742 | `0.6640 ± 0.0216` | 48.2 s |
-| Round 4: Amp10 + 40-dim readout (`z+x+y+zz`) | 600 | 1,702 | `0.7720 ± 0.0115` | 96.4 s |
-| Round 5: Amp10 + 75-dim readout (all `ZZ`) | 600 | 2,822 | `0.8250 ± 0.0127` | 155 s |
-| **Round 5: Amp10 + 165-dim (`ZZ+XX+YY`)** | 600 | 5,702 | **`0.8450 ± 0.0100`** | 556 s |
-| **Round 5: 165-dim + 1,800 train / 8 epochs** | 1,800 | 5,702 | **`0.8660 ± 0.0185`** | 530 s |
-| **Round 8: Local `PatchVQC` (shared 8q, 3×3 14×14 patches)** | 600 | 20,364 (48 quantum) | **`0.8800 ± 0.0112`** | **117 s** |
-| Round 8: Analytic fidelity QSVC (10q global / 8q 9-patch; classically computable) | 600 | — | `0.9210 ± 0.0074` / `0.9310 ± 0.0164` | 0.01 s |
-| Round 8: Stabilized serial hybrid `lightCNN + 8q VQC` (no skip) | 600 | 5,162 | `0.7650 ± 0.0464` | 116 s |
-| Round 8: Angle-10 + Pérez-Salinas trainable re-upload (`Z` / 40-dim) | 600 | 782 / 1,742 | `0.6580 ± 0.0246` / `0.7470 ± 0.0214` | 115 / 207 s |
-| Classical MLP-784 (same batch) | 600 | 25,450 | `0.8580 ± 0.0130` | 0.8 s |
-| Classical PCA-165 + matched head | 600 | 5,642 | `0.8440 ± 0.0089` | 0.7 s |
-| **Classical PCA-165 + matched head (budget-matched)** | 1,800 | 5,642 | **`0.9030 ± 0.0097`** | 0.7 s |
+| Research Question | Controlled Benchmark ([`docs/three_regimes_metrics.json`](docs/three_regimes_metrics.json)) | Verified Verdict (5 independent splits, Holm-Bonferroni) |
+| --- | --- | --- |
+| 1. Do classical-wrapper VQCs (Regime II) offer a verifiable advantage on MNIST? | `vqc_amp` vs. fixed random quadratic & `poly2`; `patch_vqc` vs. 48-param classical filter; `hybrid_vqc` vs. BN- & width-matched `hybrid_noq` | **No.** `vqc_amp` (`0.7760`) beats untrained random quadratic features (`0.6515`, `p_holm=0.024`), but trails classical `poly2` (`0.9155`) and collapses `-36.70 pt` at 200 shots; matched `patch_vqc` (`0.8705`) ties 48-param classical patch filtering (`0.8715`); with matched BN, `hybrid_noq` (`0.8310`) outperforms `hybrid_vqc` (`0.7600`). |
+| 2. How do zero-wrapper quantum-native models (Regime III) behave on MNIST? | 4q deep data re-uploading Born-rule classifier (`96q / 0c`) vs. 96-param `classical_trig_net`; 6q entangling IQP kernel (Val-tuned $\alpha$) vs. matched RBF/Poly-2 | **Trainable without MLP crutches, parity with matched classical surrogates.** Pure-quantum re-uploading (`0.6175`) ties 96-param `classical_trig_net` (`0.6165`, `+0.10 pt`); entangling IQP (`0.7380`) ties matched `poly2` (`0.7415`) / `rbf` (`0.7545`) while exposing exponential kernel concentration at high $\alpha$. |
+| 3. Where does a quantum-native algorithm (Regime III) genuinely excel? | 1D Cluster-Ising $n=8$ PBC SPT vs. non-SPT (PM + AFM) ground states: Cong-et-al. QCNN (`36q / 0c / 1 QWC basis`) vs. local observables & full-state oracle | **Decisive, shot-resilient extraction of nonlocal order.** QCNN reaches **`0.9967`** analytic, **`0.9950`** at 1000 shots, and **`0.9633`** at 200 shots (no significant drop), Holm-significantly beating 1-body observables (`0.6917` / `0.9167`, `p_holm ≤ 0.0068`) and matching the exponential-tomography full-state oracle (`1.0000`) with 36 parameters and 1 measurement basis. |
 
 ---
 
-## Core Diagnostic Findings (Rounds 3–8)
+## Three-Regime Controlled Benchmark (Track A + Track B)
 
-1. **Readout bottleneck, not barren plateaus (Rounds 3–5, [`probe_information.py`](experiments/probe_information.py), [`break_readout.py`](experiments/break_readout.py), [`push_ceiling.py`](experiments/push_ceiling.py))**:
-   - Measuring only $n=10$ `PauliZ` observables caps frozen readout separability at `0.679` (vs. `0.855` on raw pixels). Expanding to 40 and 165 observables keeps quantum circuit parameters fixed at **60** while recovering frozen separability (`0.679 → 0.811 → 0.890`) and lifting 5-seed accuracy (`0.6640 → 0.7720 → 0.8450`).
-   - Quantum gradient norms actually grow (`0.048 → 0.897`) while weights drift only `6.9%`, ruling out barren plateaus; even an untrained random unitary with 165 observables yields a `0.860` frozen probe score.
-   - At equal data + near-equal parameter budget (`1,800` images, 8 epochs), classical `PCA-165 + MLP` reaches **`0.9030 ± 0.0097`**, still `3.7 pt` ahead of `b165_d1800` (`0.8660`) and ~750× faster (`0.7 s` vs. `530 s`).
-2. **Homogeneous quadratic ceiling & lack of translation invariance (Round 6, [`why_low_acc.py`](experiments/why_low_acc.py))**:
-   - `⟨x|U† P_j U|x⟩` under amplitude encoding computes homogeneous quadratic polynomials of normalized pixels. Under unified probing (`StandardScaler + C=10 + coef0=1`), 600-sample 165-dim quantum features (`0.875`) match full classical `poly-2` across all 307,720 monomials (`0.880`).
-   - ±1px shifts preserve pixel inner product `0.673`, yet perturb 165-dim quantum features by `1.20×` intra-class dispersion — explaining why ±1px shift augmentation hurts amplitude VQC (`-4.40 pt`) while helping local receptive fields.
-   - Global L2 norm `‖x‖₂` is separable alone at `0.215`, yet concatenating it back into 165-dim end-to-end training changes accuracy by only `+0.10 ± 1.47 pt`.
-3. **Resolving four open issues in Round 8 ([`resolve_open_issues.py`](experiments/resolve_open_issues.py))**:
-   - **Local PatchVQC**: Splitting 28×28 images into 3×3 overlapping 14×14 windows (`stride=7`) processed by a shared 8-qubit circuit (48 quantum parameters) reaches **`0.8800 ± 0.0112`** and runs **5.7× faster** than global 10q (`117 s` vs. `665 s`), though the classical ablation (`Linear(196, 32) + Tanh`) achieves `0.8920 ± 0.0067`.
-   - **Serial Hybrid CNN+VQC Stabilization**: Adaptive pooling collapsed inter-sample std to `~0.003`, drowned out by `Linear` biases (`~0.15`) into constant angles (`0/5` collapse -> `0.5980 ± 0.1062`). Strictly serial `BatchNorm1d → Linear(bias=False) → BatchNorm1d → Tanh*(π/2) → 8q VQC(N(0,0.1²), 32d) → BatchNorm1d` (`HybridRichClassifier(..., stabilize=True)`, zero skip connections) lifts accuracy to **`0.7650 ± 0.0464`** (`0/5` collapses), on par with skipping the quantum block (`nq_light`: `0.7440 ± 0.0651`).
-   - **Pérez-Salinas Trainable Data Re-Uploading**: Adding bounded inputs and per-layer trainable scale/shift $\text{RY}(\omega_{l,i}\tilde{x}_i + \theta_{l,i})$ reverses the `-11.00 pt` naive re-uploading drop (`0.5220 → 0.6580 ± 0.0246` with `Z`-only, and `0.7470 ± 0.0214` with 40-dim readouts).
-   - **Analytic Quantum Kernels (QSVC)**: Achieves `0.9210` (10q global amplitude) and `0.9310` (8q 9-patch), equivalent to unscaled classical quadratic kernels (not end-to-end quantum circuits).
+**Protocol**: Every seed draws a strictly disjoint stratified `Train / Val / Test` split shared identically across all neural, VQC, kernel, and QCNN models (unified seed semantics). All model selection (IQP bandwidth $\alpha$, SVM $C$, best checkpoint) uses `Val` only; `Test` is evaluated once. Every row reports explicit `Quantum / Classical Wrapper / Preprocessing (PCA)` parameter counts and programmatic QWC basis counts via `qml.pauli.group_observables`.
+
+### Track A: Classical Data — MNIST 10-Class (600 Train / 200 Val / 400 Test, 5 Seeds)
+
+| Regime | Model | Quantum Params | Classical Wrapper | PCA Fitted | QWC Bases | Test Acc (Analytic) | Finite Shots / Notes |
+| --- | --- | ---: | ---: | ---: | ---: | --- | --- |
+| **I · Classical** | `classical_poly2_unscaled` | 0 | 0 | 0 | 0 | **`0.9155 ± 0.0124`** | Exact dequantization of `qkernel_amp` (bitwise identical) |
+| **I · Classical** | `classical_patch_lowrank` | 0 | 20,364 (48 filter) | 0 | 0 | `0.8715 ± 0.0157` | Exact parity with `patch_vqc_matched` (`batch=64`, BN, WD) |
+| **II · Ported** | `patch_vqc_matched` | 48 | 20,316 | 0 | 3 | `0.8705 ± 0.0262` | Paired `−0.10 ± 1.82 pt` (`p_holm=1.0`; 0.24% quantum) |
+| **I · Classical** | `hybrid_noq_matched` | 0 | 5,162 | 0 | 0 | `0.8310 ± 0.0569` | `stabilize=True` (dual BN + matched 32d bridge) |
+| **II · Ported** | `hybrid_vqc_matched` | 48 | 5,114 | 0 | 3 | `0.7600 ± 0.0904` | Paired `−7.10 ± 10.34 pt` (`p_holm=0.798`; 0.93% quantum) |
+| **II · Ported** | `vqc_amp_matched` (10q 40d) | 60 | 1,642 | 0 | 3 | `0.7760 ± 0.0314` | **200 shots: `0.4090` (`−36.70 pt`) · 1000 shots: `0.6360` (`−14.00 pt`)** |
+| **I · Classical** | `classical_random_quad` (40d) | 0 | 1,642 | 0 | 0 | `0.6515 ± 0.0516` | 0 learned projection params; `vqc_amp` `+12.45 pt` (`p_holm=0.024`) |
+| **I · Classical** | `classical_rbf_pca6` | 0 | 0 | 5,488 | 0 | `0.7545 ± 0.0287` | Identical per-PC standardized PCA-6, Val-tuned `gamma/C` |
+| **I · Classical** | `classical_poly2_pca6` | 0 | 0 | 5,488 | 0 | `0.7415 ± 0.0212` | Identical per-PC standardized PCA-6, Val-tuned `C` |
+| **III · Native** | `qnative_iqp_kernel` (6q 2-rep) | 0 | 0 | 5,488 | 1 | `0.7380 ± 0.0339` | Real entangling IQP circuit; `offdiag` drops `0.875→0.019` over $\alpha\in[0.15,0.75]$ |
+| **III · Native** | `qnative_reupload_fidelity` (4q L=4) | **96** | **0** | 10,192 | 1 | `0.6175 ± 0.0307` | Zero classical MLP wrapper; pure Born-rule readout (100% quantum) |
+| **I · Classical** | `classical_trig_net` (PCA-12) | 0 | 96 | 10,192 | 0 | `0.6165 ± 0.0347` | Matched 96-param trig net; paired `+0.10 ± 4.39 pt` (`p_holm=1.0`) |
+
+### Track B: Native Quantum-State Data — 1D Cluster-Ising SPT Phases ($n=8$ PBC, 120/60/120, 5 Seeds)
+
+Hamiltonian $H(h_1, h_2) = -\sum_{i=0}^{7} Z_{i-1}X_i Z_{i+1} - h_1\sum_i X_i - h_2\sum_i X_i X_{i+1}$ (exact sparse diagonalization for SPT vs. non-SPT [paramagnetic + antiferromagnetic] ground states $|\psi\rangle$):
+
+| Regime | Model | Quantum Params | Classical Params | QWC Bases | Test Acc (Analytic) | Paired vs. `qcnn_spt` (Holm) / Finite Shots |
+| --- | --- | ---: | ---: | ---: | --- | --- |
+| **III · Native** | **`qcnn_spt` (Cong-et-al. QCNN)** | **36** | **0** | **1** | **`0.9967 ± 0.0045`** | **200 shots: `0.9633 ± 0.0356` (`p_holm=0.198`) · 1000 shots: `0.9950 ± 0.0045`** |
+| **I · Classical** | `classical_1body_logreg` (24d) | 0 | 25 | — | `0.6917 ± 0.0899` | QCNN **`+30.50 ± 9.10 pt`** (CI `[+19.20, +41.80]`, `p_holm=0.00678` ✓) |
+| **I · Classical** | `classical_1body_mlp` (24d) | 0 | 833 | — | `0.9167 ± 0.0118` | QCNN **`+8.00 ± 0.95 pt`** (CI `[+6.82, +9.18]`, `p_holm=0.000235` ✓) |
+| **I · Classical** | `classical_2body_mlp` (48d) | 0 | 1,601 | — | `0.9517 ± 0.0379` | QCNN `+4.50 ± 3.47 pt` (CI `[+0.20, +8.80]`, `p_holm=0.132`) |
+| **I · Classical** | `classical_full_state_mlp` ($2^8$ oracle) | 0 | 8,257 | — | `1.0000 ± 0.0000` | `−0.33 ± 0.45 pt` (`p_holm=0.198`; requires $O(2^n)$ state tomography) |
+
+**Physics Boundary**: On classical images, single-copy `AmplitudeEmbedding` followed by any CPTP channel (including QCNNs with mid-circuit pooling) remains strictly a homogeneous quadratic form in $\hat{x}$ and hides $O(2^n)$ state preparation. On native SPT quantum states $|\psi\rangle$, no classical data-loading bottleneck exists, and coherent $8\to 4\to 2\to 1$ quantum pooling extracts nonlocal string order directly with 36 parameters and 1 measurement basis.
 
 ---
 
-## Repository Structure
+## Historical Archive Pointer (Rounds 1–8 · Full Methodology in [`docs/REVIEW.md`](docs/REVIEW.md))
 
-- `qml_lab/`: Reusable library modules (`data.py`, `quantum.py`, `models.py`, `train.py`, `utils.py`, `viz.py`).
-- `experiments/`: Scripts for all 8 rounds (`train_mnist.py`, `train_amplitude.py`, `scan_capacity.py`, `train_multiseed.py`, `diagnose_ceiling.py`, `break_readout.py`, `probe_information.py`, `push_ceiling.py`, `classical_budget.py`, `why_low_acc.py`, `train_full_mnist.py`, `resolve_open_issues.py`, `audit_round8.py`).
-- `tests/smoke_test.py`: Offline smoke & contract tests (uses synthetic fallback; no network downloads).
-- `docs/`: Full Chinese methodological review ([`docs/REVIEW.md`](docs/REVIEW.md)), offline setup notes ([`docs/DEV_NOTES.md`](docs/DEV_NOTES.md)), archived JSON metrics (`*_metrics.json`), and figures (`docs/figures/`).
+- **Full MNIST (Round 7, 60k/10k, 3 seeds, [`docs/full_metrics.json`](docs/full_metrics.json))**: 165-dim amplitude VQC (`60` quantum + `5,642` classical head, 3 QWC bases) reached `0.9421 ± 0.0008` (~42 min/seed) vs. classical `PCA-165 + MLP` (`5,642` MLP + **`130,144` fitted PCA weights**) at `0.9554 ± 0.0028` (~2.3 s/seed).
+- **Round 8 Audit Recheck ([`docs/audit_metrics.json`](docs/audit_metrics.json), fixed `batch_size=64` & weight-decay parity)**: `qkernel_amp` (`0.9210`) equals unscaled classical `poly2(coef0=0)` seed-for-seed; `PatchLinearClassifier` scores `0.8910 ± 0.0143` vs. `PatchVQC` `0.8800 ± 0.0112` (`+1.10 pt`, CI crosses 0, ~80× faster); Bonferroni reduces Round-8 significance from 13/20 to 2/20.
+- **All raw JSON archives**: `docs/{multiseed,ceiling,readout,info,push,budget,why_low,full,open_issues,audit,three_regimes}_metrics.json` and [`docs/REVIEW.md`](docs/REVIEW.md) (§1–§16).
 
 ---
 
-## Installation & Quickstart
+## Installation & Reproduction
 
-Requires **Python 3.11+**. Default configurations run offline on CPU.
+Requires **Python 3.11+**; runs offline on CPU (place the 4 MNIST IDX files in `data/MNIST/raw/`, see [`docs/DEV_NOTES.md`](docs/DEV_NOTES.md)).
 
 ```bash
 python3 -m venv .venv
-# Install CPU-only PyTorch + torchvision first to avoid large CUDA wheels on Linux/CI:
 .venv/bin/python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
 .venv/bin/python -m pip install -e ".[dev]"
-```
 
-Or install runtime dependencies with `pip install -r requirements.txt`. For offline real-MNIST runs, place the 4 MNIST IDX `.gz`/raw files in `data/MNIST/raw/` and pass `--data-source idx` (see [`docs/DEV_NOTES.md`](docs/DEV_NOTES.md)). Data fallback order is `idx → torchvision → openml → synthetic`.
-
-### Offline Tests & Reproduction Commands
-
-```bash
-# Offline test suite (no internet required)
+# 1. Offline unit & regression test suite (8 tests: angle kernel / per-PC scaling / QWC / QCNN / --quick)
 .venv/bin/python -m pytest -v tests/smoke_test.py
-.venv/bin/python tests/smoke_test.py
 
-# Quick end-to-end smoke checks (synthetic data, writes to results/ or --out)
-.venv/bin/python experiments/train_mnist.py --quick
-.venv/bin/python experiments/probe_information.py --quick
-.venv/bin/python experiments/classical_budget.py --quick
-.venv/bin/python experiments/resolve_open_issues.py --quick --no-figures
+# 2. Controlled three-regime benchmark (Track A MNIST + Track B Cluster-Ising SPT, ~5.5 min CPU / 5 workers)
+.venv/bin/python experiments/benchmark_three_regimes.py --data-source idx \
+    --workers 5 --torch-threads 2 --archive docs/three_regimes_metrics.json
 
-# Round 8 full reproduction (~19 min CPU, 12 workers) & audit (~20 s classical)
-.venv/bin/python experiments/resolve_open_issues.py --data-source idx \
-    --workers 12 --torch-threads 2 --archive docs/open_issues_metrics.json \
-    --fig-dir docs/figures
-.venv/bin/python experiments/audit_round8.py --data-source idx \
-    --archive docs/audit_metrics.json
-
-# Round 7 full MNIST (60k/10k, ~45 min CPU, 6 workers)
-.venv/bin/python experiments/train_full_mnist.py --data-source idx \
-    --workers 6 --torch-threads 4 --epochs 3 --seeds 0,1,2 \
-    --batch-size 128 --archive docs/full_metrics.json --fig-dir docs/figures
+# 3. Quick offline smoke check & refreshed Round-8 audit
+.venv/bin/python experiments/benchmark_three_regimes.py --quick
+.venv/bin/python experiments/audit_round8.py --data-source idx --archive docs/audit_metrics.json
 ```
+
+### Repository Layout
+
+- `qml_lab/`: `quantum.py` (VQC / `count_qwc_groups` / finite-shot evaluator / entangling IQP kernel), `models.py` (classifiers / dequantized surrogates / `DataReuploadingFidelityClassifier` / `parameter_breakdown` / `assert_matched_config`), `quantum_phases.py` (1D Cluster-Ising sparse diagonalization + Cong-et-al. QCNN), `data.py` (per-PC standardization + disjoint TVT splits), `train.py`, `utils.py`, `viz.py`.
+- `experiments/`: `benchmark_three_regimes.py` (primary benchmark), `audit_round8.py`, plus historical Rounds 1–8 scripts.
+- `tests/smoke_test.py`, `docs/REVIEW.md`, `docs/DEV_NOTES.md`, `docs/*_metrics.json`.
 
 ---
 
 ## Related Repositories & License
 
-- Sister benchmark: [quantum-llm](https://github.com/quantum-machine-learning-code/quantum-llm)
-- Organization: [quantum-machine-learning-code](https://github.com/quantum-machine-learning-code)
-
-Licensed under the [MIT License](LICENSE).
+- Sister benchmark: [quantum-llm](https://github.com/quantum-machine-learning-code/quantum-llm) · Organization: [quantum-machine-learning-code](https://github.com/quantum-machine-learning-code)
+- Licensed under the [MIT License](LICENSE).
